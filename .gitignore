@@ -1,3 +1,26 @@
+
+# Ažuriraj .gitignore fajl
+echo '
+# SSL Certificates
+*.crt
+*.pem
+*.key
+prod-ca-2021.crt
+
+# Database connection files
+*.p12
+*.pfx' >> .gitignore
+
+# Environments
+.env
+.envrc
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
@@ -134,15 +157,6 @@ celerybeat.pid
 # SageMath parsed files
 *.sage.py
 
-# Environments
-.env
-.envrc
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
 
 # Spyder project settings
 .spyderproject
