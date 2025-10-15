@@ -1,3 +1,5 @@
+# Temporary directory with Perplexity files
+perplexity_temp/
 
 # Ažuriraj .gitignore fajl
 echo '
