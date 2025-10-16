@@ -1,7 +1,6 @@
-
+import traceback
 import streamlit as st
 import os
-import traceback
 from supabase import create_client
 
 # Debug secrets fetch
@@ -17,7 +16,6 @@ else:
     st.success("Supabase credentials found!")
     st.write("SUPABASE_URL:", SUPABASE_URL)
     st.write("SUPABASE_KEY:", SUPABASE_KEY)
-
     try:
         supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
         st.success("Supabase client created successfully!")
@@ -26,14 +24,12 @@ else:
 
     st.title("Debug Registration Screen")
     st.markdown("### Test registration and inspect errors")
-
     with st.form("register_form"):
         email = st.text_input("Email")
         full_name = st.text_input("Full name")
         password = st.text_input("Password", type="password")
         password_confirm = st.text_input("Confirm password", type="password")
         submitted = st.form_submit_button("Register (debug)")
-
         if submitted:
             st.write("Attempting registration with:",{"email":email,"full_name":full_name,"password":password})
             if password != password_confirm:
@@ -48,11 +44,13 @@ else:
                         st.success("User created! Data:")
                         st.write(response.user)
                     else:
-                        st.error("Registration error:")
+                        st.error("Registration error (user not in response):")
                         if hasattr(response, "error"):
-                            st.write("Error object:", response.error)
-                        else:
-                            st.write("No error attribute, inspect response above.")
+                            st.write("Response.error:", response.error)
+                        if hasattr(response, "data"):
+                            st.write("Response.data:", response.data)
+                        st.write("Full response object:", vars(response) if hasattr(response, '__dict__') else response)
                 except Exception as ex:
-                    st.error(f"Exception: {ex}")
+                    st.error(f"Exception during registration: {ex}")
+                    st.write('Traceback:')
                     st.write(traceback.format_exc())
