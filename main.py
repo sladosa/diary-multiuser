@@ -1,6 +1,7 @@
 
 import streamlit as st
 import os
+import traceback
 from supabase import create_client
 
 # Debug secrets fetch
@@ -53,4 +54,5 @@ else:
                         else:
                             st.write("No error attribute, inspect response above.")
                 except Exception as ex:
-                    st.error(f"Exception during registration: {ex}")
+                    st.error(f"Exception: {ex}")
+                    st.write(traceback.format_exc())
