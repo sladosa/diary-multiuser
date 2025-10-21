@@ -1006,4 +1006,4 @@ def main():
             edit_event_page()
 
 if __name__ == "__main__":
-    main()
+    main() # Run the main function
