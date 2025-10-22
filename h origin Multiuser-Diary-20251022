@@ -1,0 +1,107 @@
+[33mcommit fb465f0c73191430213e05887057bd6dfab4aaed[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mMultiuser-Diary-20251022[m[33m)[m
+Author: sladosa <sasasladoljev59@gmail.com>
+Date:   Wed Oct 22 14:54:54 2025 +0200
+
+    New Perplexity files of 20251022
+
+[33mcommit 3ac6ad735a3e78f41e866e11e52837f5b1019b7f[m[33m ([m[1;31morigin/after_hello-world-1[m[33m, [m[1;31morigin/Multiuser-Diary-20251022[m[33m, [m[1;32mafter_hello-world-1[m[33m)[m
+Author: sladosa <sasasladoljev59@gmail.com>
+Date:   Wed Oct 22 12:03:20 2025 +0200
+
+    Branch: after hello world 1 - vise nema smisla
+
+[33mcommit 7361076bc696faaa4c95c078f061ff91328131fa[m
+Author: sladosa <sasasladoljev59@gmail.com>
+Date:   Tue Oct 21 11:04:47 2025 +0200
+
+    neki novi 20251021 s mood poljem
+
+[33mcommit ec9714b59110b7b258cb7b71878ea4b04e045f0b[m
+Author: sladosa <sasasladoljev59@gmail.com>
+Date:   Tue Oct 21 10:47:24 2025 +0200
+
+    after registration resolved 20250116t
+
+[33mcommit 6d5a33eda03f31a4cde0d85c93b57ede3c9b619e[m
+Author: sladosa <sasasladoljev59@gmail.com>
+Date:   Thu Oct 16 13:58:09 2025 +0200
+
+    after registration resolved 20250116t
+
+[33mcommit f19960818988d7351d574a9416e3725ff281ccc7[m
+Author: sladosa <sasasladoljev59@gmail.com>
+Date:   Thu Oct 16 11:32:00 2025 +0200
+
+    DEBUG: test Supabase registration3rd attempt
+
+[33mcommit 6027167c1ec6baac062df8702eee69c9bf13ee7d[m
+Author: sladosa <sasasladoljev59@gmail.com>
+Date:   Thu Oct 16 11:21:56 2025 +0200
+
+    DEBUG: test Supabase registration 2ndattempt
+
+[33mcommit 3818602790564cac4e32afecb76caf32a284be98[m
+Author: sladosa <sasasladoljev59@gmail.com>
+Date:   Thu Oct 16 11:04:15 2025 +0200
+
+    DEBUG: test Supabase registration
+
+[33mcommit 7b051bc81c6b85675e84c8c9fd67a0254028ebe8[m
+Author: sladosa <sasasladoljev59@gmail.com>
+Date:   Wed Oct 15 14:25:13 2025 +0200
+
+    Event Diary Pro s naprednim funkcionalnostima
+
+[33mcommit 388ae9d0a7057db1f953596991a240d0316f9485[m
+Author: sladosa <sasasladoljev59@gmail.com>
+Date:   Wed Oct 15 14:15:18 2025 +0200
+
+    Dodao perplexity_temp/ u  .gitignore pravila za novi branch
+
+[33mcommit c8b645ae76ebc02d72cbe9881f3522bf04268167[m[33m ([m[1;33mtag: [m[1;33mv20251013.all[m[33m, [m[1;31morigin/main[m[33m, [m[1;32mmain[m[33m)[m
+Author: sladosa <sasasladoljev59@gmail.com>
+Date:   Mon Oct 13 15:27:02 2025 +0200
+
+    Add working Hello World test based on existing app
+
+[33mcommit a162a74c55568f4cf87d18c53018f5ead61cf728[m
+Author: sladosa <sasasladoljev59@gmail.com>
+Date:   Mon Oct 13 15:19:35 2025 +0200
+
+    Add simple Hello World page without encoding issues
+
+[33mcommit e7ed41fa30340a8f37b2203f050f1a8ac4b476f6[m
+Author: sladosa <sasasladoljev59@gmail.com>
+Date:   Mon Oct 13 15:16:29 2025 +0200
+
+    Add Hello World deployment test page 1st correction
+
+[33mcommit 959702c651de05876c0f6ecf49fd0a46cdd593c4[m
+Author: sladosa <sasasladoljev59@gmail.com>
+Date:   Mon Oct 13 15:11:30 2025 +0200
+
+    Add Hello World deployment test page
+
+[33mcommit d3ac8eae6c75ac87bae15c79d49c9dc1bcb923eb[m
+Author: sladosa <sasasladoljev59@gmail.com>
+Date:   Mon Oct 13 14:57:07 2025 +0200
+
+    Remove SSL certificate from tracking and update .gitignore
+
+[33mcommit 9980e65aa06c20684141ece8a0ce3aa65aa09aff[m
+Author: sladosa <sasasladoljev59@gmail.com>
+Date:   Mon Oct 13 14:50:12 2025 +0200
+
+    Add complete project structure with pages and utils
+
+[33mcommit b53730c6176c6e8fa9a58184b81334ba7078c56a[m
+Author: sladosa <sasasladoljev59@gmail.com>
+Date:   Mon Oct 13 14:42:22 2025 +0200
+
+    Clean project structure setup
+
+[33mcommit b00f73dd6ab89fdb0089d537ea4d612cceaa3c22[m
+Author: sladosa <sasasladoljev59@gmail.com>
+Date:   Mon Oct 13 13:38:52 2025 +0200
+
+    Initial commit

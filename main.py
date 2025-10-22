@@ -15,6 +15,7 @@ import io
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from dotenv import load_dotenv
 
 # ============================================
 # CONFIGURATION
@@ -27,8 +28,25 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-SUPABASE_URL = st.secrets.get("SUPABASEURL", "") or os.getenv("SUPABASEURL", "")
-SUPABASE_KEY = st.secrets.get("SUPABASEKEY", "") or os.getenv("SUPABASEKEY", "")
+# Učitaj .env prvo (ako postoji)
+load_dotenv()
+
+# Pokušaj dobiti iz environment variables (radi i za .env i za Streamlit Cloud!)
+SUPABASE_URL = os.getenv("SUPABASEURL")
+SUPABASE_KEY = os.getenv("SUPABASEKEY")
+
+# Ako nisu u environment, pokušaj iz st.secrets (fallback)
+if not SUPABASE_URL:
+    try:
+        SUPABASE_URL = st.secrets["SUPABASEURL"]
+    except:
+        pass
+
+if not SUPABASE_KEY:
+    try:
+        SUPABASE_KEY = st.secrets["SUPABASEKEY"]
+    except:
+        pass
 
 # ============================================
 # SUPABASE CLIENT INITIALIZATION

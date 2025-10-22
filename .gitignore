@@ -1,6 +1,10 @@
 # Temporary directory with Perplexity files
 perplexity_temp/
 
+# Streamlit secrets file
+.streamlit/secrets.toml
+*.toml
+
 # Ažuriraj .gitignore fajl
 echo '
 # SSL Certificates
