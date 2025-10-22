@@ -1,3 +1,9 @@
+"""
+Event Diary Application - Complete Refactored Version
+English Interface | All Features Implemented | Production Ready
+Author: AI Assistant for Event Diary Project
+Date: October 2025
+"""
 
 import streamlit as st
 import os
@@ -6,30 +12,57 @@ from datetime import datetime, date, timedelta
 import json
 import pandas as pd
 import io
-import base64
-import calendar
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-# Configuration
-SUPABASE_URL = st.secrets.get("SUPABASEURL") or os.getenv("SUPABASEURL")
-SUPABASE_KEY = st.secrets.get("SUPABASEKEY") or os.getenv("SUPABASEKEY")
+# ============================================
+# CONFIGURATION
+# ============================================
 
-# Initialize Supabase client
+st.set_page_config(
+    page_title="Event Diary",
+    page_icon="📅",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+SUPABASE_URL = st.secrets.get("SUPABASEURL", "") or os.getenv("SUPABASEURL", "")
+SUPABASE_KEY = st.secrets.get("SUPABASEKEY", "") or os.getenv("SUPABASEKEY", "")
+
+# ============================================
+# SUPABASE CLIENT INITIALIZATION
+# ============================================
+
 @st.cache_resource
 def init_supabase():
-    return create_client(SUPABASE_URL, SUPABASE_KEY)
+    """Initialize and cache Supabase client"""
+    try:
+        if not SUPABASE_URL or not SUPABASE_KEY:
+            st.error("⚠️ Supabase credentials not found. Please configure secrets.toml")
+            return None
+        return create_client(SUPABASE_URL, SUPABASE_KEY)
+    except Exception as e:
+        st.error(f"❌ Failed to connect to database: {str(e)}")
+        return None
 
 supabase = init_supabase()
 
-# Authentication functions
+# ============================================
+# AUTHENTICATION MODULE
+# ============================================
+
 class AuthManager:
-    @staticmethod
-    def sign_up(email, password, full_name):
+    """Handles all authentication operations"""
+
+    def __init__(self, supabase_client: Client):
+        self.supabase = supabase_client
+
+    def sign_up(self, email: str, password: str, full_name: str):
+        """Register a new user"""
         try:
-            response = supabase.auth.sign_up({
-                "email": email, 
+            response = self.supabase.auth.sign_up({
+                "email": email,
                 "password": password,
                 "options": {
                     "data": {"full_name": full_name}
@@ -39,971 +72,1408 @@ class AuthManager:
         except Exception as e:
             return {"error": str(e)}
 
-    @staticmethod
-    def sign_in(email, password):
+    def sign_in(self, email: str, password: str):
+        """Sign in existing user"""
         try:
-            response = supabase.auth.sign_in_with_password({
-                "email": email, 
+            response = self.supabase.auth.sign_in_with_password({
+                "email": email,
                 "password": password
             })
             return response
         except Exception as e:
             return {"error": str(e)}
 
-    @staticmethod
-    def sign_out():
+    def sign_out(self):
+        """Sign out current user"""
         try:
-            supabase.auth.sign_out()
+            self.supabase.auth.sign_out()
             return {"success": True}
         except Exception as e:
             return {"error": str(e)}
 
-    @staticmethod
-    def get_session():
+    def get_session(self):
+        """Get current session"""
         try:
-            session = supabase.auth.get_session()
-            return session
-        except Exception as e:
+            return self.supabase.auth.get_session()
+        except:
             return None
 
-# Data export functions
-class DataExporter:
-    @staticmethod
-    def to_csv(data, filename):
-        df = pd.DataFrame(data)
-        csv = df.to_csv(index=False)
-        b64 = base64.b64encode(csv.encode()).decode()
-        return f'<a href="data:file/csv;base64,{b64}" download="{filename}">ðŸ’¾ Preuzmi CSV</a>'
+    def is_email_confirmed(self, user):
+        """Check if user email is confirmed"""
+        if user and hasattr(user, 'email_confirmed_at'):
+            return user.email_confirmed_at is not None
+        return False
 
-    @staticmethod
-    def to_excel(data, filename):
-        df = pd.DataFrame(data)
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            df.to_excel(writer, sheet_name='Eventi', index=False)
-        excel_data = output.getvalue()
-        b64 = base64.b64encode(excel_data).decode()
-        return f'<a href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}" download="{filename}">ðŸ“Š Preuzmi Excel</a>'
+# ============================================
+# DATA MANAGEMENT MODULE
+# ============================================
 
-# Analytics functions
-class AnalyticsEngine:
-    @staticmethod
-    def get_event_stats(user_id, date_from, date_to):
+class DataManager:
+    """Handles all database operations for events, areas, and categories"""
+
+    def __init__(self, supabase_client: Client):
+        self.supabase = supabase_client
+
+    # ===== AREA OPERATIONS =====
+
+    def get_user_areas(self, user_id: str):
+        """Get all areas for a user"""
         try:
-            # Osnovne statistike
-            events = supabase.table("mu_event").select("*, mu_category(name, mu_area(name))").eq("user_id", user_id).gte("occurred_at", date_from.isoformat()).lte("occurred_at", date_to.isoformat()).execute()
-
-            if not events.data:
-                return {"total": 0, "by_area": {}, "by_category": {}, "by_day": {}}
-
-            total = len(events.data)
-
-            # Po podruÄjima
-            by_area = {}
-            for event in events.data:
-                area = event['mu_category']['mu_area']['name'] if event['mu_category'] and event['mu_category']['mu_area'] else 'N/A'
-                by_area[area] = by_area.get(area, 0) + 1
-
-            # Po kategorijama
-            by_category = {}
-            for event in events.data:
-                category = event['mu_category']['name'] if event['mu_category'] else 'N/A'
-                by_category[category] = by_category.get(category, 0) + 1
-
-            # Po danima
-            by_day = {}
-            for event in events.data:
-                day = event['occurred_at'][:10]
-                by_day[day] = by_day.get(day, 0) + 1
-
-            return {
-                "total": total,
-                "by_area": by_area,
-                "by_category": by_category,
-                "by_day": by_day,
-                "events": events.data
-            }
+            response = self.supabase.table("mu_area").select("*").eq("user_id", user_id).order("name").execute()
+            return response.data if response.data else []
         except Exception as e:
-            st.error(f"GreÅ¡ka pri dohvaÄ‡anju statistika: {str(e)}")
-            return {"total": 0, "by_area": {}, "by_category": {}, "by_day": {}}
+            st.error(f"❌ Error loading areas: {str(e)}")
+            return []
 
-# Bulk operations
-class BulkOperations:
-    @staticmethod
-    def bulk_add_events(events_data, user_id):
+    def add_area(self, user_id: str, area_name: str):
+        """Add a new area for user"""
+        try:
+            response = self.supabase.table("mu_area").insert({
+                "name": area_name,
+                "user_id": user_id,
+                "created_at": datetime.now().isoformat()
+            }).execute()
+            return response.data[0] if response.data else None
+        except Exception as e:
+            st.error(f"❌ Error adding area: {str(e)}")
+            return None
+
+    def delete_area(self, area_id: int, user_id: str):
+        """Delete an area"""
+        try:
+            self.supabase.table("mu_area").delete().eq("id", area_id).eq("user_id", user_id).execute()
+            return True
+        except Exception as e:
+            st.error(f"❌ Error deleting area: {str(e)}")
+            return False
+
+    # ===== CATEGORY OPERATIONS =====
+
+    def get_user_categories(self, user_id: str, area_id: int = None):
+        """Get categories for a user, optionally filtered by area"""
+        try:
+            query = self.supabase.table("mu_category").select("*, mu_area(name)").eq("user_id", user_id)
+            if area_id:
+                query = query.eq("area_id", area_id)
+            response = query.order("name").execute()
+            return response.data if response.data else []
+        except Exception as e:
+            st.error(f"❌ Error loading categories: {str(e)}")
+            return []
+
+    def add_category(self, user_id: str, category_name: str, area_id: int):
+        """Add a new category for user"""
+        try:
+            response = self.supabase.table("mu_category").insert({
+                "name": category_name,
+                "area_id": area_id,
+                "user_id": user_id,
+                "created_at": datetime.now().isoformat()
+            }).execute()
+            return response.data[0] if response.data else None
+        except Exception as e:
+            st.error(f"❌ Error adding category: {str(e)}")
+            return None
+
+    def delete_category(self, category_id: int, user_id: str):
+        """Delete a category"""
+        try:
+            self.supabase.table("mu_category").delete().eq("id", category_id).eq("user_id", user_id).execute()
+            return True
+        except Exception as e:
+            st.error(f"❌ Error deleting category: {str(e)}")
+            return False
+
+    # ===== EVENT OPERATIONS =====
+
+    def get_events(self, user_id: str, filters: dict = None, limit: int = None, offset: int = None):
+        """Get events for user with optional filters"""
+        try:
+            query = self.supabase.table("mu_event").select("*, mu_category(name, area_id, mu_area(name))").eq("user_id", user_id)
+
+            # Apply filters
+            if filters:
+                if filters.get('category_ids'):
+                    query = query.in_("category_id", filters['category_ids'])
+
+                if filters.get('area_ids'):
+                    # Need to filter via category
+                    categories = self.get_user_categories(user_id)
+                    cat_ids = [c['id'] for c in categories if c.get('area_id') in filters['area_ids']]
+                    if cat_ids:
+                        query = query.in_("category_id", cat_ids)
+
+                if filters.get('date_from'):
+                    query = query.gte("occurred_at", filters['date_from'].isoformat())
+
+                if filters.get('date_to'):
+                    # Add one day to include the entire end date
+                    end_date = filters['date_to'] + timedelta(days=1)
+                    query = query.lt("occurred_at", end_date.isoformat())
+
+            # Order by date descending
+            query = query.order("occurred_at", desc=True)
+
+            # Apply pagination
+            if limit:
+                query = query.limit(limit)
+            if offset:
+                query = query.range(offset, offset + limit - 1 if limit else offset + 9)
+
+            response = query.execute()
+            events = response.data if response.data else []
+
+            # Apply text search filter (client-side)
+            if filters and filters.get('search_text'):
+                search_text = filters['search_text'].lower()
+                events = [e for e in events if search_text in (e.get('comment', '') or '').lower()]
+
+            return events
+        except Exception as e:
+            st.error(f"❌ Error loading events: {str(e)}")
+            return []
+
+    def get_event_count(self, user_id: str, filters: dict = None):
+        """Get total count of events for pagination"""
+        try:
+            query = self.supabase.table("mu_event").select("id", count="exact").eq("user_id", user_id)
+
+            if filters:
+                if filters.get('category_ids'):
+                    query = query.in_("category_id", filters['category_ids'])
+                if filters.get('date_from'):
+                    query = query.gte("occurred_at", filters['date_from'].isoformat())
+                if filters.get('date_to'):
+                    end_date = filters['date_to'] + timedelta(days=1)
+                    query = query.lt("occurred_at", end_date.isoformat())
+
+            response = query.execute()
+            return response.count if hasattr(response, 'count') else len(response.data)
+        except Exception as e:
+            st.error(f"❌ Error counting events: {str(e)}")
+            return 0
+
+    def add_event(self, user_id: str, category_id: int, occurred_at: datetime, comment: str = "", data: dict = None):
+        """Add a new event"""
+        try:
+            response = self.supabase.table("mu_event").insert({
+                "category_id": category_id,
+                "occurred_at": occurred_at.isoformat(),
+                "comment": comment,
+                "data": data,
+                "user_id": user_id,
+                "created_at": datetime.now().isoformat()
+            }).execute()
+            return response.data[0] if response.data else None
+        except Exception as e:
+            st.error(f"❌ Error adding event: {str(e)}")
+            return None
+
+    def update_event(self, event_id: int, user_id: str, category_id: int, occurred_at: datetime, comment: str = "", data: dict = None):
+        """Update an existing event"""
+        try:
+            response = self.supabase.table("mu_event").update({
+                "category_id": category_id,
+                "occurred_at": occurred_at.isoformat(),
+                "comment": comment,
+                "data": data,
+                "updated_at": datetime.now().isoformat()
+            }).eq("id", event_id).eq("user_id", user_id).execute()
+            return response.data[0] if response.data else None
+        except Exception as e:
+            st.error(f"❌ Error updating event: {str(e)}")
+            return None
+
+    def delete_event(self, event_id: int, user_id: str):
+        """Delete an event"""
+        try:
+            self.supabase.table("mu_event").delete().eq("id", event_id).eq("user_id", user_id).execute()
+            return True
+        except Exception as e:
+            st.error(f"❌ Error deleting event: {str(e)}")
+            return False
+
+    def get_event_by_id(self, event_id: int, user_id: str):
+        """Get a single event by ID"""
+        try:
+            response = self.supabase.table("mu_event").select("*, mu_category(*, mu_area(*))").eq("id", event_id).eq("user_id", user_id).single().execute()
+            return response.data
+        except Exception as e:
+            st.error(f"❌ Error loading event: {str(e)}")
+            return None
+
+    def bulk_add_events(self, events_data: list, user_id: str):
+        """Bulk add multiple events"""
         try:
             for event in events_data:
                 event['user_id'] = user_id
+                event['created_at'] = datetime.now().isoformat()
+                if isinstance(event.get('occurred_at'), datetime):
+                    event['occurred_at'] = event['occurred_at'].isoformat()
 
-            response = supabase.table("mu_event").insert(events_data).execute()
+            response = self.supabase.table("mu_event").insert(events_data).execute()
             return {"success": True, "count": len(events_data)}
         except Exception as e:
             return {"error": str(e)}
 
-# Initialize session state for authentication
-def init_auth_state():
+# ============================================
+# SESSION STATE INITIALIZATION
+# ============================================
+
+def init_session_state():
+    """Initialize all session state variables"""
+
+    # Authentication state
     if 'authenticated' not in st.session_state:
         st.session_state.authenticated = False
     if 'user' not in st.session_state:
         st.session_state.user = None
     if 'user_id' not in st.session_state:
         st.session_state.user_id = None
+
+    # Navigation
     if 'current_page' not in st.session_state:
         st.session_state.current_page = 'dashboard'
 
-    # Check if user has valid session
-    session = AuthManager.get_session()
-    if session and session.user:
-        st.session_state.authenticated = True
-        st.session_state.user = session.user
-        st.session_state.user_id = session.user.id
+    # Dashboard filters - None means show ALL (no filter initially)
+    if 'filter_areas' not in st.session_state:
+        st.session_state.filter_areas = []
+    if 'filter_categories' not in st.session_state:
+        st.session_state.filter_categories = []
+    if 'filter_date_from' not in st.session_state:
+        st.session_state.filter_date_from = None
+    if 'filter_date_to' not in st.session_state:
+        st.session_state.filter_date_to = None
+    if 'filter_search' not in st.session_state:
+        st.session_state.filter_search = ""
 
-def login_page():
-    st.title("ðŸ” Multi-User Event Diary Login")
+    # Pagination
+    if 'current_page_num' not in st.session_state:
+        st.session_state.current_page_num = 1
 
-    tab1, tab2 = st.tabs(["Prijava", "Registracija"])
+    # Remember last used values for quick entry
+    if 'last_area_id' not in st.session_state:
+        st.session_state.last_area_id = None
+    if 'last_category_id' not in st.session_state:
+        st.session_state.last_category_id = None
+
+    # Edit mode
+    if 'editing_event_id' not in st.session_state:
+        st.session_state.editing_event_id = None
+
+    # Delete confirmation
+    if 'delete_confirm_id' not in st.session_state:
+        st.session_state.delete_confirm_id = None
+
+    # Check for existing session
+    if supabase and not st.session_state.authenticated:
+        auth_manager = AuthManager(supabase)
+        session = auth_manager.get_session()
+        if session and hasattr(session, 'user') and session.user:
+            if auth_manager.is_email_confirmed(session.user):
+                st.session_state.authenticated = True
+                st.session_state.user = session.user
+                st.session_state.user_id = session.user.id
+
+
+
+# ============================================
+# LOGIN PAGE
+# ============================================
+
+def login_page(auth_manager: AuthManager):
+    """Render login and registration page"""
+
+    st.title("🔐 Event Diary - Login")
+
+    # Show email confirmation warning if needed
+    if st.session_state.get('email_not_confirmed', False):
+        st.warning("⚠️ Please confirm your email address before logging in. Check your inbox for the confirmation link.")
+
+    tab1, tab2 = st.tabs(["Sign In", "Register"])
 
     with tab1:
-        st.subheader("Prijavite se")
+        st.subheader("Sign In")
         with st.form("login_form"):
-            email = st.text_input("Email")
-            password = st.text_input("Lozinka", type="password")
-            submitted = st.form_submit_button("Prijavi se")
+            email = st.text_input("Email", placeholder="your@email.com")
+            password = st.text_input("Password", type="password", placeholder="Enter your password")
+            submitted = st.form_submit_button("Sign In", use_container_width=True)
 
             if submitted:
-                with st.spinner("Prijavljivanje..."):
-                    response = AuthManager.sign_in(email, password)
-                    if hasattr(response, 'user') and response.user:
-                        st.session_state.authenticated = True
-                        st.session_state.user = response.user
-                        st.session_state.user_id = response.user.id
-                        st.success("UspjeÅ¡no ste se prijavili!")
-                        st.rerun()
-                    else:
-                        st.error("Neispravni podaci za prijavu")
+                if not email or not password:
+                    st.error("❌ Please enter both email and password")
+                else:
+                    with st.spinner("Signing in..."):
+                        response = auth_manager.sign_in(email, password)
+
+                        if hasattr(response, 'user') and response.user:
+                            if auth_manager.is_email_confirmed(response.user):
+                                st.session_state.authenticated = True
+                                st.session_state.user = response.user
+                                st.session_state.user_id = response.user.id
+                                st.success("✅ Successfully signed in!")
+                                st.rerun()
+                            else:
+                                st.error("❌ Please confirm your email address before logging in.")
+                                st.session_state.email_not_confirmed = True
+                        else:
+                            error_msg = response.get('error', 'Invalid login credentials')
+                            st.error(f"❌ Sign in failed: {error_msg}")
 
     with tab2:
-        st.subheader("Registrirajte se")
+        st.subheader("Create New Account")
         with st.form("signup_form"):
-            email = st.text_input("Email", key="signup_email")
-            full_name = st.text_input("Puno ime")
-            password = st.text_input("Lozinka", type="password", key="signup_password")
-            password_confirm = st.text_input("Potvrdi lozinku", type="password")
-            submitted = st.form_submit_button("Registriraj se")
+            email = st.text_input("Email", key="signup_email", placeholder="your@email.com")
+            full_name = st.text_input("Full Name", placeholder="John Doe")
+            password = st.text_input("Password", type="password", key="signup_password", placeholder="Minimum 6 characters")
+            password_confirm = st.text_input("Confirm Password", type="password", placeholder="Re-enter password")
+            submitted = st.form_submit_button("Register", use_container_width=True)
 
             if submitted:
-                if password != password_confirm:
-                    st.error("Lozinke se ne poklapaju")
+                if not email or not full_name or not password:
+                    st.error("❌ Please fill in all fields")
+                elif password != password_confirm:
+                    st.error("❌ Passwords do not match")
                 elif len(password) < 6:
-                    st.error("Lozinka mora imati najmanje 6 znakova")
+                    st.error("❌ Password must be at least 6 characters")
                 else:
-                    with st.spinner("Registracija..."):
-                        response = AuthManager.sign_up(email, password, full_name)
-                        if hasattr(response, 'user') and response.user:
-                            st.success("UspjeÅ¡no ste se registrirali! Molimo prijavite se.")
-                        else:
-                            st.error(f"GreÅ¡ka pri registraciji: {response.get('error', 'Nepoznata greÅ¡ka')}")
+                    with st.spinner("Creating account..."):
+                        response = auth_manager.sign_up(email, password, full_name)
 
-def navigation_sidebar():
-    st.sidebar.title("ðŸ§­ Navigacija")
+                        if hasattr(response, 'user') and response.user:
+                            st.success("✅ Registration successful! Please check your email to confirm your account.")
+                            st.info("📧 Check your inbox (and spam folder) for the confirmation email.")
+                        else:
+                            error_msg = response.get('error', 'Unknown error occurred')
+                            st.error(f"❌ Registration failed: {error_msg}")
+
+# ============================================
+# NAVIGATION SIDEBAR
+# ============================================
+
+def navigation_sidebar(auth_manager: AuthManager):
+    """Render navigation sidebar"""
+
+    st.sidebar.title("🧭 Navigation")
 
     pages = {
-        "dashboard": "ðŸ“… Dashboard",
-        "add_event": "âž• Dodaj dogaÄ‘aj",
-        "bulk_add": "ðŸ“ Bulk dodavanje",
-        "analytics": "ðŸ“Š Analytics",
-        "calendar": "ðŸ—“ï¸ Kalendar",
-        "export": "ðŸ’¾ Export podataka"
+        "dashboard": "📅 Dashboard",
+        "add_event": "➕ Add Event",
+        "manage_data": "🏷️ Manage Areas & Categories",
+        "bulk_import": "📄 Bulk Import",
+        "analytics": "📊 Analytics",
+        "export": "💾 Export Data"
     }
 
-    current_page = st.sidebar.radio(
-        "Odaberite stranicu:",
+    # Radio button for page selection
+    selected_page = st.sidebar.radio(
+        "Select Page:",
         options=list(pages.keys()),
         format_func=lambda x: pages[x],
         index=list(pages.keys()).index(st.session_state.current_page) if st.session_state.current_page in pages else 0
     )
 
-    if current_page != st.session_state.current_page:
-        st.session_state.current_page = current_page
+    if selected_page != st.session_state.current_page:
+        st.session_state.current_page = selected_page
         st.rerun()
 
     st.sidebar.divider()
 
     # User info
-    st.sidebar.write(f"ðŸ‘¤ {st.session_state.user.email}")
+    user_email = st.session_state.user.email if st.session_state.user else "Unknown"
+    st.sidebar.write(f"👤 **User:** {user_email}")
 
-    if st.sidebar.button("ðŸšª Odjavi se"):
-        AuthManager.sign_out()
+    # Sign out button
+    if st.sidebar.button("🚪 Sign Out", use_container_width=True):
+        auth_manager.sign_out()
+        # Clear all session state
         for key in list(st.session_state.keys()):
             del st.session_state[key]
         st.rerun()
 
-def main_dashboard():
-    st.title("ðŸ“… Event Diary Dashboard")
+# ============================================
+# DASHBOARD PAGE
+# ============================================
 
-    # Initialize filters
-    if 'selected_areas' not in st.session_state:
-        st.session_state.selected_areas = []
-    if 'selected_categories' not in st.session_state:
-        st.session_state.selected_categories = []
-    if 'date_from' not in st.session_state:
-        st.session_state.date_from = date.today() - timedelta(days=30)
-    if 'date_to' not in st.session_state:
-        st.session_state.date_to = date.today()
-    if 'search_text' not in st.session_state:
-        st.session_state.search_text = ""
+def dashboard_page(data_manager: DataManager):
+    """Main dashboard with event list, filters, and pagination"""
 
-    # Load user areas and categories
-    try:
-        areas_response = supabase.table("mu_area").select("*").eq("user_id", st.session_state.user_id).execute()
-        areas = areas_response.data if areas_response.data else []
+    st.title("📅 Event Dashboard")
 
-        categories_response = supabase.table("mu_category").select("*, mu_area(name)").eq("user_id", st.session_state.user_id).execute()
-        categories = categories_response.data if categories_response.data else []
-    except Exception as e:
-        st.error(f"GreÅ¡ka pri dohvaÄ‡anju podataka: {str(e)}")
-        areas, categories = [], []
+    user_id = st.session_state.user_id
 
-    # Advanced filters
-    st.subheader("ðŸ” Napredni filteri")
+    # Get areas and categories for filters
+    areas = data_manager.get_user_areas(user_id)
+    categories = data_manager.get_user_categories(user_id)
 
-    col1, col2, col3, col4 = st.columns(4)
+    # Sidebar filters
+    with st.sidebar:
+        st.subheader("🔍 Filters")
 
-    with col1:
-        area_options = {area['id']: area['name'] for area in areas}
-        selected_areas = st.multiselect(
-            "PodruÄja:",
-            options=list(area_options.keys()),
-            format_func=lambda x: area_options.get(x, ""),
-            default=st.session_state.selected_areas
-        )
-        st.session_state.selected_areas = selected_areas
-
-    with col2:
-        if selected_areas:
-            filtered_categories = [cat for cat in categories if cat['area_id'] in selected_areas]
-        else:
-            filtered_categories = categories
-
-        category_options = {cat['id']: cat['name'] for cat in filtered_categories}
-        selected_categories = st.multiselect(
-            "Kategorije:",
-            options=list(category_options.keys()),
-            format_func=lambda x: category_options.get(x, ""),
-            default=[cat for cat in st.session_state.selected_categories if cat in category_options.keys()]
-        )
-        st.session_state.selected_categories = selected_categories
-
-    with col3:
-        date_from = st.date_input("Od:", value=st.session_state.date_from)
-        st.session_state.date_from = date_from
-
-    with col4:
-        date_to = st.date_input("Do:", value=st.session_state.date_to)
-        st.session_state.date_to = date_to
-
-    # Text search
-    search_text = st.text_input("ðŸ” PretraÅ¾i po komentaru:", value=st.session_state.search_text)
-    st.session_state.search_text = search_text
-
-    # Load events based on filters
-    try:
-        query = supabase.table("mu_event").select("*, mu_category(name, mu_area(name))").eq("user_id", st.session_state.user_id)
-
-        if selected_categories:
-            query = query.in_("category_id", selected_categories)
-
-        query = query.gte("occurred_at", date_from.isoformat()).lte("occurred_at", date_to.isoformat())
-        query = query.order("occurred_at", desc=True)
-
-        events_response = query.execute()
-        events = events_response.data if events_response.data else []
-
-        # Filter by search text
-        if search_text:
-            events = [e for e in events if search_text.lower() in (e.get('comment', '') or '').lower()]
-
-    except Exception as e:
-        st.error(f"GreÅ¡ka pri dohvaÄ‡anju dogaÄ‘aja: {str(e)}")
-        events = []
-
-    # Quick stats
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Ukupno dogaÄ‘aja", len(events))
-    with col2:
-        unique_days = len(set(e['occurred_at'][:10] for e in events))
-        st.metric("Aktivnih dana", unique_days)
-    with col3:
-        if events:
-            avg_per_day = round(len(events) / max(unique_days, 1), 1)
-        else:
-            avg_per_day = 0
-        st.metric("Prosjek po danu", avg_per_day)
-    with col4:
-        if events:
-            last_event = max(events, key=lambda x: x['occurred_at'])
-            days_since = (date.today() - datetime.fromisoformat(last_event['occurred_at']).date()).days
-        else:
-            days_since = "N/A"
-        st.metric("Zadnji dogaÄ‘aj prije", f"{days_since} dana" if isinstance(days_since, int) else days_since)
-
-    # Display events with pagination
-    st.subheader(f"ðŸ“‹ DogaÄ‘aji")
-
-    # Pagination
-    items_per_page = 10
-    total_pages = (len(events) + items_per_page - 1) // items_per_page if events else 1
-
-    if total_pages > 1:
-        page = st.selectbox(f"Stranica (ukupno {total_pages}):", range(1, total_pages + 1))
-        start_idx = (page - 1) * items_per_page
-        end_idx = start_idx + items_per_page
-        page_events = events[start_idx:end_idx]
-    else:
-        page_events = events
-
-    if page_events:
-        for event in page_events:
-            with st.expander(f"{event['occurred_at'][:16]} - {event['mu_category']['name'] if event['mu_category'] else 'N/A'}"):
-                col1, col2 = st.columns([3, 1])
-
-                with col1:
-                    st.write(f"**PodruÄje:** {event['mu_category']['mu_area']['name'] if event['mu_category'] and event['mu_category']['mu_area'] else 'N/A'}")
-                    st.write(f"**Kategorija:** {event['mu_category']['name'] if event['mu_category'] else 'N/A'}")
-                    st.write(f"**Komentar:** {event['comment'] or 'Nema komentara'}")
-                    if event['data']:
-                        st.write(f"**Dodatni podaci:** {event['data']}")
-
-                with col2:
-                    col_edit, col_delete = st.columns(2)
-                    with col_edit:
-                        if st.button(f"âœï¸", key=f"edit_{event['id']}", help="Uredi"):
-                            st.session_state.edit_event_id = event['id']
-                            st.session_state.current_page = 'edit_event'
-                            st.rerun()
-                    with col_delete:
-                        if st.button(f"ðŸ—‘ï¸", key=f"delete_{event['id']}", help="ObriÅ¡i"):
-                            if st.session_state.get(f"confirm_delete_{event['id']}", False):
-                                # Delete confirmed
-                                try:
-                                    supabase.table("mu_event").delete().eq("id", event['id']).execute()
-                                    st.success("DogaÄ‘aj je obrisan!")
-                                    st.rerun()
-                                except Exception as e:
-                                    st.error(f"GreÅ¡ka pri brisanju: {str(e)}")
-                            else:
-                                st.session_state[f"confirm_delete_{event['id']}"] = True
-                                st.warning("Kliknite ponovno za potvrdu brisanja!")
-    else:
-        st.info("Nema dogaÄ‘aja prema odabranim filtrima.")
-
-def add_event_page():
-    st.title("âž• Dodaj novi dogaÄ‘aj")
-
-    # Load areas and categories
-    try:
-        areas_response = supabase.table("mu_area").select("*").eq("user_id", st.session_state.user_id).execute()
-        areas = areas_response.data if areas_response.data else []
-
-        categories_response = supabase.table("mu_category").select("*").eq("user_id", st.session_state.user_id).execute()
-        categories = categories_response.data if categories_response.data else []
-    except Exception as e:
-        st.error(f"GreÅ¡ka pri dohvaÄ‡anju podataka: {str(e)}")
-        return
-
-    # Default values based on current filters
-    default_area_id = st.session_state.selected_areas[0] if st.session_state.selected_areas else (areas[0]['id'] if areas else None)
-    default_category_id = st.session_state.selected_categories[0] if st.session_state.selected_categories else None
-
-    with st.form("add_event_form"):
-        col1, col2 = st.columns(2)
-
-        with col1:
-            # Area selection
-            area_options = {area['id']: area['name'] for area in areas}
-            if area_options:
-                selected_area_id = st.selectbox(
-                    "PodruÄje:",
-                    options=list(area_options.keys()),
-                    format_func=lambda x: area_options.get(x, ""),
-                    index=list(area_options.keys()).index(default_area_id) if default_area_id and default_area_id in area_options else 0
-                )
-            else:
-                st.error("Nema dostupnih podruÄja. Molimo dodajte podruÄje putem Supabase interface.")
-                return
-
-        with col2:
-            # Category selection
-            filtered_categories = [cat for cat in categories if cat['area_id'] == selected_area_id]
-            if filtered_categories:
-                category_options = {cat['id']: cat['name'] for cat in filtered_categories}
-                selected_category_id = st.selectbox(
-                    "Kategorija:",
-                    options=list(category_options.keys()),
-                    format_func=lambda x: category_options.get(x, ""),
-                    index=list(category_options.keys()).index(default_category_id) if default_category_id and default_category_id in category_options else 0
-                )
-            else:
-                st.warning("Nema kategorija za odabrano podruÄje")
-                selected_category_id = None
-
-        occurred_at = st.datetime_input("Datum i vrijeme:", value=datetime.now())
-        comment = st.text_area("Komentar:")
-        data = st.text_input("Dodatni podaci (JSON format, opcionalno):")
-
-        submitted = st.form_submit_button("ðŸ’¾ Spremi dogaÄ‘aj", type="primary")
-
-        if submitted and selected_category_id:
-            try:
-                # Validate JSON data
-                json_data = None
-                if data.strip():
-                    json_data = json.loads(data)
-
-                with st.spinner("Spremanje dogaÄ‘aja..."):
-                    response = supabase.table("mu_event").insert({
-                        "category_id": selected_category_id,
-                        "occurred_at": occurred_at.isoformat(),
-                        "comment": comment,
-                        "data": json_data,
-                        "user_id": st.session_state.user_id
-                    }).execute()
-
-                if response.data:
-                    st.success("DogaÄ‘aj je uspjeÅ¡no dodan!")
-                    # Clear form
-                    st.rerun()
-                else:
-                    st.error("GreÅ¡ka pri dodavanju dogaÄ‘aja")
-            except json.JSONDecodeError:
-                st.error("Neispravni JSON format u dodatnim podacima")
-            except Exception as e:
-                st.error(f"GreÅ¡ka: {str(e)}")
-
-def edit_event_page():
-    if 'edit_event_id' not in st.session_state:
-        st.error("Nema dogaÄ‘aja za ureÄ‘ivanje")
-        return
-
-    event_id = st.session_state.edit_event_id
-
-    st.title("âœï¸ Uredi dogaÄ‘aj")
-
-    # Load event data
-    try:
-        response = supabase.table("mu_event").select("*, mu_category(*, mu_area(*))").eq("id", event_id).eq("user_id", st.session_state.user_id).single().execute()
-        event = response.data
-
-        if not event:
-            st.error("DogaÄ‘aj nije pronaÄ‘en")
-            return
-    except Exception as e:
-        st.error(f"GreÅ¡ka pri dohvaÄ‡anju dogaÄ‘aja: {str(e)}")
-        return
-
-    # Load areas and categories
-    try:
-        areas_response = supabase.table("mu_area").select("*").eq("user_id", st.session_state.user_id).execute()
-        areas = areas_response.data if areas_response.data else []
-
-        categories_response = supabase.table("mu_category").select("*").eq("user_id", st.session_state.user_id).execute()
-        categories = categories_response.data if categories_response.data else []
-    except Exception as e:
-        st.error(f"GreÅ¡ka pri dohvaÄ‡anju podataka: {str(e)}")
-        return
-
-    with st.form("edit_event_form"):
-        col1, col2 = st.columns(2)
-
-        current_area_id = event['mu_category']['area_id'] if event['mu_category'] else areas[0]['id']
-        current_category_id = event['category_id']
-
-        with col1:
-            area_options = {area['id']: area['name'] for area in areas}
-            selected_area_id = st.selectbox(
-                "PodruÄje:",
+        # Area filter
+        if areas:
+            area_options = {a['id']: a['name'] for a in areas}
+            selected_areas = st.multiselect(
+                "Filter by Area:",
                 options=list(area_options.keys()),
-                format_func=lambda x: area_options.get(x, ""),
-                index=list(area_options.keys()).index(current_area_id) if current_area_id in area_options else 0
+                format_func=lambda x: area_options[x],
+                default=st.session_state.filter_areas,
+                key="area_filter"
             )
+            st.session_state.filter_areas = selected_areas
+
+        # Category filter
+        if categories:
+            cat_options = {c['id']: f"{c['name']} ({c['mu_area']['name'] if c.get('mu_area') else 'No area'})" for c in categories}
+            selected_categories = st.multiselect(
+                "Filter by Category:",
+                options=list(cat_options.keys()),
+                format_func=lambda x: cat_options[x],
+                default=st.session_state.filter_categories,
+                key="cat_filter"
+            )
+            st.session_state.filter_categories = selected_categories
+
+        # Date range filter
+        col1, col2 = st.columns(2)
+        with col1:
+            date_from = st.date_input(
+                "From:",
+                value=st.session_state.filter_date_from,
+                key="date_from_filter"
+            )
+            st.session_state.filter_date_from = date_from
 
         with col2:
-            filtered_categories = [cat for cat in categories if cat['area_id'] == selected_area_id]
-            category_options = {cat['id']: cat['name'] for cat in filtered_categories}
-            selected_category_id = st.selectbox(
-                "Kategorija:",
-                options=list(category_options.keys()),
-                format_func=lambda x: category_options.get(x, ""),
-                index=list(category_options.keys()).index(current_category_id) if current_category_id in category_options else 0
+            date_to = st.date_input(
+                "To:",
+                value=st.session_state.filter_date_to,
+                key="date_to_filter"
             )
+            st.session_state.filter_date_to = date_to
 
-        occurred_at = st.datetime_input(
-            "Datum i vrijeme:",
-            value=datetime.fromisoformat(event['occurred_at'].replace('Z', '+00:00')).replace(tzinfo=None)
+        # Text search
+        search_text = st.text_input(
+            "🔎 Search in comments:",
+            value=st.session_state.filter_search,
+            placeholder="Type to search...",
+            key="search_filter"
         )
-        comment = st.text_area("Komentar:", value=event['comment'] or "")
-        data = st.text_input(
-            "Dodatni podaci (JSON format):",
-            value=json.dumps(event['data']) if event['data'] else ""
-        )
+        st.session_state.filter_search = search_text
 
-        col_save, col_cancel = st.columns(2)
-
-        with col_save:
-            submitted = st.form_submit_button("ðŸ’¾ Spremi promjene", type="primary")
-        with col_cancel:
-            cancelled = st.form_submit_button("âŒ Odustani")
-
-        if cancelled:
-            if 'edit_event_id' in st.session_state:
-                del st.session_state['edit_event_id']
-            st.session_state.current_page = 'dashboard'
+        # Clear filters button
+        if st.button("🗑️ Clear All Filters", use_container_width=True):
+            st.session_state.filter_areas = []
+            st.session_state.filter_categories = []
+            st.session_state.filter_date_from = None
+            st.session_state.filter_date_to = None
+            st.session_state.filter_search = ""
+            st.session_state.current_page_num = 1
             st.rerun()
 
-        if submitted:
-            try:
-                json_data = None
-                if data.strip():
-                    json_data = json.loads(data)
+    # Build filters dict
+    filters = {}
+    if st.session_state.filter_areas:
+        filters['area_ids'] = st.session_state.filter_areas
+    if st.session_state.filter_categories:
+        filters['category_ids'] = st.session_state.filter_categories
+    if st.session_state.filter_date_from:
+        filters['date_from'] = st.session_state.filter_date_from
+    if st.session_state.filter_date_to:
+        filters['date_to'] = st.session_state.filter_date_to
+    if st.session_state.filter_search:
+        filters['search_text'] = st.session_state.filter_search
 
-                with st.spinner("Spremanje promjena..."):
-                    response = supabase.table("mu_event").update({
-                        "category_id": selected_category_id,
-                        "occurred_at": occurred_at.isoformat(),
-                        "comment": comment,
-                        "data": json_data,
-                        "updated_at": datetime.now().isoformat()
-                    }).eq("id", event_id).eq("user_id", st.session_state.user_id).execute()
+    # Get total count for pagination
+    total_events = data_manager.get_event_count(user_id, filters if filters else None)
 
-                if response.data:
-                    st.success("DogaÄ‘aj je uspjeÅ¡no aÅ¾uriran!")
-                    if 'edit_event_id' in st.session_state:
-                        del st.session_state['edit_event_id']
-                    st.session_state.current_page = 'dashboard'
-                    st.rerun()
-                else:
-                    st.error("GreÅ¡ka pri aÅ¾uriranju dogaÄ‘aja")
-            except json.JSONDecodeError:
-                st.error("Neispravni JSON format u dodatnim podacima")
-            except Exception as e:
-                st.error(f"GreÅ¡ka: {str(e)}")
+    # Pagination settings
+    events_per_page = 10
+    total_pages = max(1, (total_events + events_per_page - 1) // events_per_page)
 
-def bulk_add_page():
-    st.title("ðŸ“ Bulk dodavanje dogaÄ‘aja")
+    # Display stats
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Total Events", total_events)
+    with col2:
+        st.metric("Current Page", f"{st.session_state.current_page_num}/{total_pages}")
+    with col3:
+        active_filters = len([f for f in filters.values() if f])
+        st.metric("Active Filters", active_filters)
+    with col4:
+        st.metric("Events/Page", events_per_page)
 
-    st.info("Dodajte viÅ¡e dogaÄ‘aja odjednom koristeÄ‡i CSV format ili manual unos.")
+    st.divider()
 
-    tab1, tab2 = st.tabs(["ðŸ“Š CSV Upload", "âœï¸ Manual unos"])
+    # Pagination controls
+    if total_pages > 1:
+        col1, col2, col3 = st.columns([1, 3, 1])
+        with col1:
+            if st.button("⬅️ Previous", disabled=(st.session_state.current_page_num <= 1)):
+                st.session_state.current_page_num -= 1
+                st.rerun()
+        with col2:
+            page_num = st.selectbox(
+                "Go to page:",
+                options=range(1, total_pages + 1),
+                index=st.session_state.current_page_num - 1,
+                key="page_selector"
+            )
+            if page_num != st.session_state.current_page_num:
+                st.session_state.current_page_num = page_num
+                st.rerun()
+        with col3:
+            if st.button("Next ➡️", disabled=(st.session_state.current_page_num >= total_pages)):
+                st.session_state.current_page_num += 1
+                st.rerun()
 
-    # Load areas and categories for reference
-    try:
-        areas_response = supabase.table("mu_area").select("*").eq("user_id", st.session_state.user_id).execute()
-        areas = areas_response.data if areas_response.data else []
+    # Get events for current page
+    offset = (st.session_state.current_page_num - 1) * events_per_page
+    events = data_manager.get_events(user_id, filters if filters else None, limit=events_per_page, offset=offset)
 
-        categories_response = supabase.table("mu_category").select("*").eq("user_id", st.session_state.user_id).execute()
-        categories = categories_response.data if categories_response.data else []
-    except Exception as e:
-        st.error(f"GreÅ¡ka pri dohvaÄ‡anju podataka: {str(e)}")
+    # Display events
+    if not events:
+        st.info("📭 No events found. Try adjusting your filters or add a new event!")
+    else:
+        for event in events:
+            with st.container():
+                col1, col2, col3, col4 = st.columns([3, 2, 1, 1])
+
+                with col1:
+                    occurred_dt = datetime.fromisoformat(event['occurred_at'].replace('Z', '+00:00'))
+                    st.write(f"**{occurred_dt.strftime('%Y-%m-%d %H:%M')}**")
+                    if event.get('comment'):
+                        st.write(event['comment'])
+
+                with col2:
+                    if event.get('mu_category'):
+                        area_name = event['mu_category'].get('mu_area', {}).get('name', 'No area') if event['mu_category'].get('mu_area') else 'No area'
+                        st.write(f"📁 {area_name}")
+                        st.write(f"🏷️ {event['mu_category']['name']}")
+
+                with col3:
+                    if st.button("✏️ Edit", key=f"edit_{event['id']}"):
+                        st.session_state.editing_event_id = event['id']
+                        st.session_state.current_page = 'edit_event'
+                        st.rerun()
+
+                with col4:
+                    # Delete with confirmation
+                    if st.session_state.delete_confirm_id == event['id']:
+                        if st.button("⚠️ Confirm?", key=f"confirm_del_{event['id']}"):
+                            if data_manager.delete_event(event['id'], user_id):
+                                st.success("✅ Event deleted!")
+                                st.session_state.delete_confirm_id = None
+                                st.rerun()
+                    else:
+                        if st.button("🗑️ Delete", key=f"del_{event['id']}"):
+                            st.session_state.delete_confirm_id = event['id']
+                            st.rerun()
+
+                st.divider()
+
+
+
+# ============================================
+# ADD EVENT PAGE
+# ============================================
+
+def add_event_page(data_manager: DataManager):
+    """Page for adding new events with date/time picker"""
+
+    st.title("➕ Add New Event")
+
+    user_id = st.session_state.user_id
+
+    # Get areas and categories
+    areas = data_manager.get_user_areas(user_id)
+
+    if not areas:
+        st.warning("⚠️ No areas found. Please create an area first in 'Manage Areas & Categories'.")
+        if st.button("Go to Manage Areas"):
+            st.session_state.current_page = 'manage_data'
+            st.rerun()
         return
 
+    with st.form("add_event_form"):
+        st.subheader("Event Details")
+
+        # Area selection with "Add New" option
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            area_options = {a['id']: a['name'] for a in areas}
+            default_area_idx = 0
+            if st.session_state.last_area_id and st.session_state.last_area_id in area_options:
+                default_area_idx = list(area_options.keys()).index(st.session_state.last_area_id)
+
+            selected_area_id = st.selectbox(
+                "Area *",
+                options=list(area_options.keys()),
+                format_func=lambda x: area_options[x],
+                index=default_area_idx,
+                help="Select the area for this event"
+            )
+
+        with col2:
+            st.write("")  # Spacing
+            st.write("")  # Spacing
+            if st.form_submit_button("+ New Area"):
+                st.info("💡 Use 'Manage Areas & Categories' page to add new areas")
+
+        # Category selection based on area
+        categories = data_manager.get_user_categories(user_id, selected_area_id)
+
+        if not categories:
+            st.warning(f"⚠️ No categories found for this area. Please create a category first.")
+            selected_category_id = None
+        else:
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                cat_options = {c['id']: c['name'] for c in categories}
+                default_cat_idx = 0
+                if st.session_state.last_category_id and st.session_state.last_category_id in cat_options:
+                    default_cat_idx = list(cat_options.keys()).index(st.session_state.last_category_id)
+
+                selected_category_id = st.selectbox(
+                    "Category *",
+                    options=list(cat_options.keys()),
+                    format_func=lambda x: cat_options[x],
+                    index=default_cat_idx,
+                    help="Select the category for this event"
+                )
+
+            with col2:
+                st.write("")  # Spacing
+                st.write("")  # Spacing
+                if st.form_submit_button("+ New Category"):
+                    st.info("💡 Use 'Manage Areas & Categories' page to add new categories")
+
+        st.divider()
+
+        # Date and time selection
+        col1, col2 = st.columns(2)
+        with col1:
+            event_date = st.date_input(
+                "Event Date *",
+                value=date.today(),
+                help="Select the date when the event occurred"
+            )
+
+        with col2:
+            event_time = st.time_input(
+                "Event Time *",
+                value=datetime.now().time(),
+                help="Select the time when the event occurred"
+            )
+
+        # Combine date and time
+        occurred_at = datetime.combine(event_date, event_time)
+
+        st.write(f"📅 Event will be recorded as: **{occurred_at.strftime('%Y-%m-%d %H:%M')}**")
+
+        st.divider()
+
+        # Comment
+        comment = st.text_area(
+            "Comment (optional)",
+            placeholder="Add any notes or details about this event...",
+            height=100
+        )
+
+        # Duration (optional)
+        duration = st.number_input(
+            "Duration (minutes, optional)",
+            min_value=0,
+            value=0,
+            help="How long did this event last?"
+        )
+
+        # Submit button
+        col1, col2, col3 = st.columns([1, 1, 2])
+        with col1:
+            submitted = st.form_submit_button("✅ Add Event", use_container_width=True)
+        with col2:
+            if st.form_submit_button("❌ Cancel", use_container_width=True):
+                st.session_state.current_page = 'dashboard'
+                st.rerun()
+
+        if submitted:
+            if not selected_category_id:
+                st.error("❌ Please select a category or create one first")
+            else:
+                # Prepare data
+                event_data = {
+                    "duration_minutes": duration if duration > 0 else None
+                }
+
+                # Add event
+                result = data_manager.add_event(
+                    user_id=user_id,
+                    category_id=selected_category_id,
+                    occurred_at=occurred_at,
+                    comment=comment,
+                    data=event_data if event_data["duration_minutes"] else None
+                )
+
+                if result:
+                    st.success("✅ Event added successfully!")
+                    # Remember last used area and category
+                    st.session_state.last_area_id = selected_area_id
+                    st.session_state.last_category_id = selected_category_id
+                    st.info("💡 Your last selections are remembered for the next event!")
+                    # Redirect to dashboard
+                    if st.button("Go to Dashboard"):
+                        st.session_state.current_page = 'dashboard'
+                        st.rerun()
+
+# ============================================
+# EDIT EVENT PAGE
+# ============================================
+
+def edit_event_page(data_manager: DataManager):
+    """Page for editing an existing event"""
+
+    st.title("✏️ Edit Event")
+
+    user_id = st.session_state.user_id
+    event_id = st.session_state.editing_event_id
+
+    if not event_id:
+        st.error("❌ No event selected for editing")
+        if st.button("Back to Dashboard"):
+            st.session_state.current_page = 'dashboard'
+            st.rerun()
+        return
+
+    # Load event
+    event = data_manager.get_event_by_id(event_id, user_id)
+
+    if not event:
+        st.error("❌ Event not found or you don't have permission to edit it")
+        if st.button("Back to Dashboard"):
+            st.session_state.current_page = 'dashboard'
+            st.rerun()
+        return
+
+    # Get areas and categories
+    areas = data_manager.get_user_areas(user_id)
+
+    with st.form("edit_event_form"):
+        st.subheader("Edit Event Details")
+
+        # Area selection
+        area_options = {a['id']: a['name'] for a in areas}
+        current_area_id = event['mu_category']['area_id']
+        current_area_idx = list(area_options.keys()).index(current_area_id) if current_area_id in area_options else 0
+
+        selected_area_id = st.selectbox(
+            "Area *",
+            options=list(area_options.keys()),
+            format_func=lambda x: area_options[x],
+            index=current_area_idx
+        )
+
+        # Category selection
+        categories = data_manager.get_user_categories(user_id, selected_area_id)
+        cat_options = {c['id']: c['name'] for c in categories}
+        current_cat_idx = list(cat_options.keys()).index(event['category_id']) if event['category_id'] in cat_options else 0
+
+        selected_category_id = st.selectbox(
+            "Category *",
+            options=list(cat_options.keys()),
+            format_func=lambda x: cat_options[x],
+            index=current_cat_idx
+        )
+
+        st.divider()
+
+        # Parse current datetime
+        occurred_dt = datetime.fromisoformat(event['occurred_at'].replace('Z', '+00:00'))
+
+        # Date and time selection
+        col1, col2 = st.columns(2)
+        with col1:
+            event_date = st.date_input(
+                "Event Date *",
+                value=occurred_dt.date()
+            )
+
+        with col2:
+            event_time = st.time_input(
+                "Event Time *",
+                value=occurred_dt.time()
+            )
+
+        # Combine date and time
+        occurred_at = datetime.combine(event_date, event_time)
+
+        st.write(f"📅 Event will be recorded as: **{occurred_at.strftime('%Y-%m-%d %H:%M')}**")
+
+        st.divider()
+
+        # Comment
+        comment = st.text_area(
+            "Comment (optional)",
+            value=event.get('comment', ''),
+            height=100
+        )
+
+        # Duration
+        current_duration = event.get('data', {}).get('duration_minutes', 0) if event.get('data') else 0
+        duration = st.number_input(
+            "Duration (minutes, optional)",
+            min_value=0,
+            value=current_duration or 0
+        )
+
+        # Submit buttons
+        col1, col2, col3 = st.columns([1, 1, 2])
+        with col1:
+            submitted = st.form_submit_button("💾 Save Changes", use_container_width=True)
+        with col2:
+            if st.form_submit_button("❌ Cancel", use_container_width=True):
+                st.session_state.editing_event_id = None
+                st.session_state.current_page = 'dashboard'
+                st.rerun()
+
+        if submitted:
+            # Prepare data
+            event_data = {
+                "duration_minutes": duration if duration > 0 else None
+            }
+
+            # Update event
+            result = data_manager.update_event(
+                event_id=event_id,
+                user_id=user_id,
+                category_id=selected_category_id,
+                occurred_at=occurred_at,
+                comment=comment,
+                data=event_data if event_data["duration_minutes"] else None
+            )
+
+            if result:
+                st.success("✅ Event updated successfully!")
+                st.session_state.editing_event_id = None
+                if st.button("Back to Dashboard"):
+                    st.session_state.current_page = 'dashboard'
+                    st.rerun()
+
+# ============================================
+# MANAGE AREAS & CATEGORIES PAGE
+# ============================================
+
+def manage_data_page(data_manager: DataManager):
+    """Page for managing areas and categories"""
+
+    st.title("🏷️ Manage Areas & Categories")
+
+    user_id = st.session_state.user_id
+
+    tab1, tab2 = st.tabs(["📁 Areas", "🏷️ Categories"])
+
+    # === AREAS TAB ===
     with tab1:
-        st.subheader("CSV Upload")
+        st.subheader("Your Areas")
 
-        # Show example CSV format
-        with st.expander("ðŸ“– Prikaz CSV formata"):
-            example_df = pd.DataFrame({
-                'category_id': [categories[0]['id'] if categories else 1, categories[1]['id'] if len(categories) > 1 else 1],
-                'occurred_at': ['2024-10-14T10:00:00', '2024-10-14T14:30:00'],
-                'comment': ['Prvi dogaÄ‘aj', 'Drugi dogaÄ‘aj'],
-                'data': ['{}', '{"tip": "meeting"}']
-            })
-            st.dataframe(example_df)
+        # Add new area form
+        with st.form("add_area_form"):
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                new_area_name = st.text_input("New Area Name", placeholder="e.g., Work, Health, Personal")
+            with col2:
+                st.write("")
+                st.write("")
+                add_area_btn = st.form_submit_button("➕ Add Area", use_container_width=True)
 
-            st.write("**Dostupne kategorije:**")
-            for cat in categories[:5]:  # Show first 5
-                st.write(f"- {cat['id']}: {cat['name']}")
+            if add_area_btn:
+                if not new_area_name or not new_area_name.strip():
+                    st.error("❌ Area name cannot be empty")
+                else:
+                    result = data_manager.add_area(user_id, new_area_name.strip())
+                    if result:
+                        st.success(f"✅ Area '{new_area_name}' added successfully!")
+                        st.rerun()
 
-        uploaded_file = st.file_uploader("Odaberite CSV datoteku:", type=['csv'])
+        st.divider()
+
+        # List existing areas
+        areas = data_manager.get_user_areas(user_id)
+
+        if not areas:
+            st.info("📭 No areas yet. Create your first area above!")
+        else:
+            st.write(f"**Total Areas:** {len(areas)}")
+
+            for area in areas:
+                col1, col2 = st.columns([4, 1])
+                with col1:
+                    st.write(f"📁 **{area['name']}**")
+                with col2:
+                    if st.button("🗑️", key=f"del_area_{area['id']}", help="Delete this area"):
+                        # Check if area has categories
+                        cats = data_manager.get_user_categories(user_id, area['id'])
+                        if cats:
+                            st.error(f"❌ Cannot delete area with {len(cats)} categories. Delete categories first.")
+                        else:
+                            if data_manager.delete_area(area['id'], user_id):
+                                st.success("✅ Area deleted!")
+                                st.rerun()
+                st.divider()
+
+    # === CATEGORIES TAB ===
+    with tab2:
+        st.subheader("Your Categories")
+
+        areas = data_manager.get_user_areas(user_id)
+
+        if not areas:
+            st.warning("⚠️ Please create an area first before adding categories.")
+        else:
+            # Add new category form
+            with st.form("add_category_form"):
+                col1, col2, col3 = st.columns([2, 2, 1])
+
+                with col1:
+                    area_options = {a['id']: a['name'] for a in areas}
+                    selected_area_id = st.selectbox(
+                        "Area",
+                        options=list(area_options.keys()),
+                        format_func=lambda x: area_options[x]
+                    )
+
+                with col2:
+                    new_category_name = st.text_input("Category Name", placeholder="e.g., Meeting, Exercise")
+
+                with col3:
+                    st.write("")
+                    st.write("")
+                    add_cat_btn = st.form_submit_button("➕ Add", use_container_width=True)
+
+                if add_cat_btn:
+                    if not new_category_name or not new_category_name.strip():
+                        st.error("❌ Category name cannot be empty")
+                    else:
+                        result = data_manager.add_category(user_id, new_category_name.strip(), selected_area_id)
+                        if result:
+                            st.success(f"✅ Category '{new_category_name}' added to area!")
+                            st.rerun()
+
+            st.divider()
+
+            # List existing categories grouped by area
+            for area in areas:
+                st.write(f"### 📁 {area['name']}")
+
+                cats = data_manager.get_user_categories(user_id, area['id'])
+
+                if not cats:
+                    st.write("  _No categories in this area_")
+                else:
+                    for cat in cats:
+                        col1, col2 = st.columns([4, 1])
+                        with col1:
+                            st.write(f"  🏷️ {cat['name']}")
+                        with col2:
+                            if st.button("🗑️", key=f"del_cat_{cat['id']}", help="Delete this category"):
+                                if data_manager.delete_category(cat['id'], user_id):
+                                    st.success("✅ Category deleted!")
+                                    st.rerun()
+
+                st.divider()
+
+
+
+# ============================================
+# BULK IMPORT PAGE
+# ============================================
+
+def bulk_import_page(data_manager: DataManager):
+    """Page for bulk importing events"""
+
+    st.title("📄 Bulk Import Events")
+
+    user_id = st.session_state.user_id
+
+    st.info("💡 Import multiple events at once using CSV upload or manual entry.")
+
+    tab1, tab2 = st.tabs(["📤 CSV Upload", "✍️ Manual Entry"])
+
+    # === CSV UPLOAD TAB ===
+    with tab1:
+        st.subheader("Upload CSV File")
+
+        st.write("**CSV Format Requirements:**")
+        st.code("""
+category_id,occurred_at,comment,duration_minutes
+1,2025-10-22 10:30:00,Morning meeting,60
+2,2025-10-22 14:00:00,Gym workout,45
+        """)
+
+        st.write("**Instructions:**")
+        st.write("- `category_id`: Must be one of your existing category IDs")
+        st.write("- `occurred_at`: Format YYYY-MM-DD HH:MM:SS")
+        st.write("- `comment`: Optional text description")
+        st.write("- `duration_minutes`: Optional number")
+
+        uploaded_file = st.file_uploader("Choose CSV file", type=['csv'])
 
         if uploaded_file:
             try:
                 df = pd.read_csv(uploaded_file)
-                st.write(f"UÄitan CSV s {len(df)} redaka")
-                st.dataframe(df.head())
 
-                if st.button("ðŸ“¥ Dodaj sve dogaÄ‘aje iz CSV-a"):
-                    events_to_add = []
-                    for _, row in df.iterrows():
-                        event = {
-                            'category_id': int(row['category_id']),
-                            'occurred_at': row['occurred_at'],
-                            'comment': str(row['comment']),
-                            'data': json.loads(row['data']) if pd.notna(row['data']) and row['data'].strip() else None,
-                            'user_id': st.session_state.user_id
-                        }
-                        events_to_add.append(event)
+                st.write("**Preview:**")
+                st.dataframe(df.head(10))
 
-                    with st.spinner("Dodavanje dogaÄ‘aja..."):
-                        result = BulkOperations.bulk_add_events(events_to_add, st.session_state.user_id)
+                st.write(f"**Total rows:** {len(df)}")
 
-                    if result.get('success'):
-                        st.success(f"UspjeÅ¡no dodano {result['count']} dogaÄ‘aja!")
-                    else:
-                        st.error(f"GreÅ¡ka: {result.get('error')}")
+                # Validate required columns
+                required_cols = ['category_id', 'occurred_at']
+                missing_cols = [col for col in required_cols if col not in df.columns]
+
+                if missing_cols:
+                    st.error(f"❌ Missing required columns: {', '.join(missing_cols)}")
+                else:
+                    if st.button("✅ Import All Events", use_container_width=True):
+                        with st.spinner("Importing events..."):
+                            events_data = []
+
+                            for idx, row in df.iterrows():
+                                try:
+                                    event_dict = {
+                                        "category_id": int(row['category_id']),
+                                        "occurred_at": row['occurred_at'],
+                                        "comment": str(row.get('comment', '')),
+                                    }
+
+                                    if 'duration_minutes' in row and pd.notna(row['duration_minutes']):
+                                        event_dict['data'] = {"duration_minutes": int(row['duration_minutes'])}
+
+                                    events_data.append(event_dict)
+                                except Exception as e:
+                                    st.warning(f"⚠️ Skipping row {idx + 1}: {str(e)}")
+
+                            if events_data:
+                                result = data_manager.bulk_add_events(events_data, user_id)
+
+                                if result.get('success'):
+                                    st.success(f"✅ Successfully imported {result['count']} events!")
+                                    if st.button("Go to Dashboard"):
+                                        st.session_state.current_page = 'dashboard'
+                                        st.rerun()
+                                else:
+                                    st.error(f"❌ Import failed: {result.get('error')}")
+                            else:
+                                st.error("❌ No valid events to import")
 
             except Exception as e:
-                st.error(f"GreÅ¡ka pri obradi CSV-a: {str(e)}")
+                st.error(f"❌ Error reading CSV file: {str(e)}")
 
+    # === MANUAL ENTRY TAB ===
     with tab2:
-        st.subheader("Manual unos viÅ¡e dogaÄ‘aja")
+        st.subheader("Manual Multi-Event Entry")
 
-        # Number of events to add
-        num_events = st.number_input("Broj dogaÄ‘aja za dodavanje:", min_value=1, max_value=20, value=3)
+        # Get categories for selection
+        categories = data_manager.get_user_categories(user_id)
 
-        events_data = []
+        if not categories:
+            st.warning("⚠️ No categories found. Please create categories first.")
+            return
 
-        for i in range(num_events):
-            st.write(f"### DogaÄ‘aj {i+1}")
-            col1, col2, col3 = st.columns(3)
+        cat_options = {c['id']: f"{c['name']} ({c.get('mu_area', {}).get('name', 'No area')})" for c in categories}
 
-            with col1:
-                area_options = {area['id']: area['name'] for area in areas}
-                selected_area = st.selectbox(f"PodruÄje {i+1}:", list(area_options.keys()), format_func=lambda x: area_options[x], key=f"area_{i}")
+        num_events = st.number_input("How many events to add?", min_value=1, max_value=20, value=3)
 
-            with col2:
-                filtered_cats = [cat for cat in categories if cat['area_id'] == selected_area]
-                cat_options = {cat['id']: cat['name'] for cat in filtered_cats}
-                selected_cat = st.selectbox(f"Kategorija {i+1}:", list(cat_options.keys()), format_func=lambda x: cat_options[x], key=f"cat_{i}")
+        with st.form("bulk_manual_form"):
+            events_to_add = []
 
-            with col3:
-                occurred_at = st.datetime_input(f"Datum/vrijeme {i+1}:", key=f"datetime_{i}")
+            for i in range(num_events):
+                st.write(f"**Event {i+1}**")
+                col1, col2, col3, col4 = st.columns([2, 2, 2, 2])
 
-            comment = st.text_area(f"Komentar {i+1}:", key=f"comment_{i}")
+                with col1:
+                    cat_id = st.selectbox(
+                        "Category",
+                        options=list(cat_options.keys()),
+                        format_func=lambda x: cat_options[x],
+                        key=f"cat_{i}"
+                    )
 
-            events_data.append({
-                'category_id': selected_cat,
-                'occurred_at': occurred_at.isoformat(),
-                'comment': comment,
-                'user_id': st.session_state.user_id
-            })
+                with col2:
+                    evt_date = st.date_input("Date", value=date.today(), key=f"date_{i}")
 
-        if st.button("ðŸ“ Dodaj sve dogaÄ‘aje"):
-            with st.spinner("Dodavanje dogaÄ‘aja..."):
-                result = BulkOperations.bulk_add_events(events_data, st.session_state.user_id)
+                with col3:
+                    evt_time = st.time_input("Time", value=datetime.now().time(), key=f"time_{i}")
 
-            if result.get('success'):
-                st.success(f"UspjeÅ¡no dodano {result['count']} dogaÄ‘aja!")
-            else:
-                st.error(f"GreÅ¡ka: {result.get('error')}")
+                with col4:
+                    duration = st.number_input("Duration (min)", min_value=0, value=0, key=f"dur_{i}")
 
-def analytics_page():
-    st.title("ðŸ“Š Analytics Dashboard")
+                comment = st.text_input("Comment (optional)", key=f"comment_{i}")
 
-    # Date range for analytics
+                occurred_at = datetime.combine(evt_date, evt_time)
+
+                events_to_add.append({
+                    "category_id": cat_id,
+                    "occurred_at": occurred_at,
+                    "comment": comment,
+                    "data": {"duration_minutes": duration} if duration > 0 else None
+                })
+
+                st.divider()
+
+            submitted = st.form_submit_button("✅ Add All Events", use_container_width=True)
+
+            if submitted:
+                result = data_manager.bulk_add_events(events_to_add, user_id)
+
+                if result.get('success'):
+                    st.success(f"✅ Successfully added {result['count']} events!")
+                    if st.button("Go to Dashboard"):
+                        st.session_state.current_page = 'dashboard'
+                        st.rerun()
+                else:
+                    st.error(f"❌ Failed to add events: {result.get('error')}")
+
+# ============================================
+# ANALYTICS PAGE
+# ============================================
+
+def analytics_page(data_manager: DataManager):
+    """Page for viewing analytics and charts"""
+
+    st.title("📊 Analytics & Insights")
+
+    user_id = st.session_state.user_id
+
+    # Date range selector
     col1, col2 = st.columns(2)
     with col1:
-        start_date = st.date_input("Od datuma:", value=date.today() - timedelta(days=30))
+        start_date = st.date_input("From:", value=date.today() - timedelta(days=30))
     with col2:
-        end_date = st.date_input("Do datuma:", value=date.today())
+        end_date = st.date_input("To:", value=date.today())
 
-    # Get analytics data
-    stats = AnalyticsEngine.get_event_stats(st.session_state.user_id, start_date, end_date)
+    # Get events in date range
+    filters = {
+        'date_from': start_date,
+        'date_to': end_date
+    }
 
-    # Key metrics
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Ukupno dogaÄ‘aja", stats['total'])
-    with col2:
-        unique_days = len(stats['by_day'])
-        st.metric("Aktivnih dana", unique_days)
-    with col3:
-        avg_per_day = round(stats['total'] / max(unique_days, 1), 1) if stats['total'] > 0 else 0
-        st.metric("Prosjek po danu", avg_per_day)
-    with col4:
-        most_active_area = max(stats['by_area'], key=stats['by_area'].get) if stats['by_area'] else "N/A"
-        st.metric("Najaktivnije podruÄje", most_active_area)
+    events = data_manager.get_events(user_id, filters)
 
-    if stats['total'] > 0:
-        # Charts
-        col1, col2 = st.columns(2)
-
-        with col1:
-            st.subheader("DogaÄ‘aji po podruÄjima")
-            if stats['by_area']:
-                fig = px.pie(
-                    values=list(stats['by_area'].values()),
-                    names=list(stats['by_area'].keys()),
-                    title="Distribucija po podruÄjima"
-                )
-                st.plotly_chart(fig, use_container_width=True)
-
-        with col2:
-            st.subheader("DogaÄ‘aji po kategorijama")
-            if stats['by_category']:
-                fig = px.bar(
-                    x=list(stats['by_category'].keys()),
-                    y=list(stats['by_category'].values()),
-                    title="Broj dogaÄ‘aja po kategorijama"
-                )
-                fig.update_xaxes(tickangle=45)
-                st.plotly_chart(fig, use_container_width=True)
-
-        # Timeline chart
-        st.subheader("Vremenska linija aktivnosti")
-        if stats['by_day']:
-            dates = list(stats['by_day'].keys())
-            counts = list(stats['by_day'].values())
-
-            fig = px.line(
-                x=dates,
-                y=counts,
-                title="Broj dogaÄ‘aja po danima",
-                markers=True
-            )
-            fig.update_layout(xaxis_title="Datum", yaxis_title="Broj dogaÄ‘aja")
-            st.plotly_chart(fig, use_container_width=True)
-
-        # Weekly pattern analysis
-        if stats['events']:
-            st.subheader("Analiza po danima u tjednu")
-
-            # Prepare data for weekly analysis
-            weekly_data = {}
-            for event in stats['events']:
-                event_date = datetime.fromisoformat(event['occurred_at'])
-                day_name = calendar.day_name[event_date.weekday()]
-                weekly_data[day_name] = weekly_data.get(day_name, 0) + 1
-
-            days_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-            weekly_counts = [weekly_data.get(day, 0) for day in days_order]
-
-            fig = px.bar(
-                x=['Pon', 'Uto', 'Sri', 'ÄŒet', 'Pet', 'Sub', 'Ned'],
-                y=weekly_counts,
-                title="Aktivnost po danima u tjednu"
-            )
-            st.plotly_chart(fig, use_container_width=True)
-
-    else:
-        st.info("Nema podataka za odabrani period.")
-
-def calendar_view_page():
-    st.title("ðŸ—“ï¸ Kalendarski prikaz")
-
-    # Month/year selector
-    col1, col2 = st.columns(2)
-    with col1:
-        selected_year = st.selectbox("Godina:", range(2020, 2030), index=range(2020, 2030).index(date.today().year))
-    with col2:
-        selected_month = st.selectbox("Mjesec:", range(1, 13), index=date.today().month - 1, format_func=lambda x: calendar.month_name[x])
-
-    # Get events for selected month
-    start_date = date(selected_year, selected_month, 1)
-    if selected_month == 12:
-        end_date = date(selected_year + 1, 1, 1) - timedelta(days=1)
-    else:
-        end_date = date(selected_year, selected_month + 1, 1) - timedelta(days=1)
-
-    try:
-        query = supabase.table("mu_event").select("*, mu_category(name, mu_area(name))").eq("user_id", st.session_state.user_id)
-        query = query.gte("occurred_at", start_date.isoformat()).lte("occurred_at", end_date.isoformat())
-        events_response = query.execute()
-        events = events_response.data if events_response.data else []
-    except Exception as e:
-        st.error(f"GreÅ¡ka pri dohvaÄ‡anju dogaÄ‘aja: {str(e)}")
-        events = []
-
-    # Group events by day
-    events_by_day = {}
-    for event in events:
-        day = datetime.fromisoformat(event['occurred_at']).date()
-        if day not in events_by_day:
-            events_by_day[day] = []
-        events_by_day[day].append(event)
-
-    # Display calendar
-    st.subheader(f"ðŸ“… {calendar.month_name[selected_month]} {selected_year}")
-
-    # Generate calendar HTML
-    cal = calendar.monthcalendar(selected_year, selected_month)
-
-    # Calendar grid
-    days_of_week = ['Pon', 'Uto', 'Sri', 'ÄŒet', 'Pet', 'Sub', 'Ned']
-
-    # Header
-    cols = st.columns(7)
-    for i, day_name in enumerate(days_of_week):
-        cols[i].write(f"**{day_name}**")
-
-    # Calendar days
-    for week in cal:
-        cols = st.columns(7)
-        for i, day in enumerate(week):
-            if day == 0:
-                cols[i].write("")
-            else:
-                current_date = date(selected_year, selected_month, day)
-                day_events = events_by_day.get(current_date, [])
-
-                with cols[i]:
-                    if day_events:
-                        st.write(f"**{day}** ðŸ”´({len(day_events)})")
-                        for event in day_events[:2]:  # Show max 2 events
-                            time_str = datetime.fromisoformat(event['occurred_at']).strftime('%H:%M')
-                            st.write(f"â€¢ {time_str}")
-                        if len(day_events) > 2:
-                            st.write(f"... +{len(day_events) - 2}")
-                    else:
-                        st.write(f"{day}")
-
-    # Detailed events list
-    if events:
-        st.subheader(f"ðŸ“‹ Svi dogaÄ‘aji u {calendar.month_name[selected_month]}")
-        for event in sorted(events, key=lambda x: x['occurred_at']):
-            event_date = datetime.fromisoformat(event['occurred_at'])
-            with st.expander(f"{event_date.strftime('%d.%m. %H:%M')} - {event['mu_category']['name'] if event['mu_category'] else 'N/A'}"):
-                st.write(f"**PodruÄje:** {event['mu_category']['mu_area']['name'] if event['mu_category'] and event['mu_category']['mu_area'] else 'N/A'}")
-                st.write(f"**Komentar:** {event['comment'] or 'Nema komentara'}")
-
-def export_page():
-    st.title("ðŸ’¾ Export podataka")
-
-    # Export options
-    col1, col2 = st.columns(2)
-
-    with col1:
-        export_format = st.selectbox("Format:", ["CSV", "Excel", "JSON"])
-    with col2:
-        date_range = st.selectbox("Raspon:", ["Zadnjih 30 dana", "Zadnjih 90 dana", "Ova godina", "Sve podatke", "PrilagoÄ‘eno"])
-
-    # Date range selection
-    if date_range == "PrilagoÄ‘eno":
-        col1, col2 = st.columns(2)
-        with col1:
-            start_date = st.date_input("Od:", value=date.today() - timedelta(days=30))
-        with col2:
-            end_date = st.date_input("Do:", value=date.today())
-    else:
-        end_date = date.today()
-        if date_range == "Zadnjih 30 dana":
-            start_date = end_date - timedelta(days=30)
-        elif date_range == "Zadnjih 90 dana":
-            start_date = end_date - timedelta(days=90)
-        elif date_range == "Ova godina":
-            start_date = date(end_date.year, 1, 1)
-        else:  # Sve podatke
-            start_date = date(2020, 1, 1)
-
-    # Get data to export
-    try:
-        query = supabase.table("mu_event").select("*, mu_category(name, mu_area(name))").eq("user_id", st.session_state.user_id)
-        query = query.gte("occurred_at", start_date.isoformat()).lte("occurred_at", end_date.isoformat())
-        query = query.order("occurred_at", desc=False)
-        events_response = query.execute()
-        events = events_response.data if events_response.data else []
-    except Exception as e:
-        st.error(f"GreÅ¡ka pri dohvaÄ‡anju podataka: {str(e)}")
+    if not events:
+        st.info("📭 No events found in selected date range.")
         return
 
-    if events:
-        st.write(f"ðŸ“Š PronaÄ‘eno {len(events)} dogaÄ‘aja za export")
+    # Convert to DataFrame for analysis
+    df_events = []
+    for e in events:
+        occurred_dt = datetime.fromisoformat(e['occurred_at'].replace('Z', '+00:00'))
+        df_events.append({
+            'date': occurred_dt.date(),
+            'datetime': occurred_dt,
+            'area': e.get('mu_category', {}).get('mu_area', {}).get('name', 'Unknown'),
+            'category': e.get('mu_category', {}).get('name', 'Unknown'),
+            'comment': e.get('comment', ''),
+            'duration': e.get('data', {}).get('duration_minutes', 0) if e.get('data') else 0
+        })
 
-        # Prepare data for export
-        export_data = []
-        for event in events:
-            export_data.append({
-                'Datum': event['occurred_at'][:10],
-                'Vrijeme': event['occurred_at'][11:16],
-                'PodruÄje': event['mu_category']['mu_area']['name'] if event['mu_category'] and event['mu_category']['mu_area'] else 'N/A',
-                'Kategorija': event['mu_category']['name'] if event['mu_category'] else 'N/A',
-                'Komentar': event['comment'] or '',
-                'Dodatni_podaci': json.dumps(event['data']) if event['data'] else '',
-                'Kreiran': event['created_at'][:10]
-            })
+    df = pd.DataFrame(df_events)
 
-        # Preview
-        st.subheader("ðŸ” Pregled podataka")
-        df = pd.DataFrame(export_data)
-        st.dataframe(df.head(10))
+    # Summary metrics
+    st.subheader("📈 Summary")
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Total Events", len(df))
+    with col2:
+        unique_days = df['date'].nunique()
+        st.metric("Active Days", unique_days)
+    with col3:
+        avg_per_day = len(df) / max(unique_days, 1)
+        st.metric("Avg Events/Day", f"{avg_per_day:.1f}")
+    with col4:
+        total_duration = df['duration'].sum()
+        st.metric("Total Duration (hrs)", f"{total_duration / 60:.1f}")
 
-        # Export buttons
-        st.subheader("â¬‡ï¸ Preuzimanje")
+    st.divider()
 
-        col1, col2, col3 = st.columns(3)
+    # Charts
+    tab1, tab2, tab3 = st.tabs(["📅 Timeline", "📁 By Area", "🏷️ By Category"])
 
-        with col1:
-            if export_format in ["CSV", "Excel"]:
-                if st.button("ðŸ“¥ Preuzmi CSV"):
-                    csv = df.to_csv(index=False)
-                    st.download_button(
-                        label="ðŸ’¾ Preuzmi CSV datoteku",
-                        data=csv,
-                        file_name=f"eventi_{start_date}_{end_date}.csv",
-                        mime="text/csv"
-                    )
+    with tab1:
+        st.subheader("Events Over Time")
 
-        with col2:
-            if export_format in ["Excel"]:
-                if st.button("ðŸ“¥ Preuzmi Excel"):
-                    output = io.BytesIO()
-                    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                        df.to_excel(writer, sheet_name='Eventi', index=False)
-                    excel_data = output.getvalue()
+        # Daily count
+        daily_counts = df.groupby('date').size().reset_index(name='count')
+        daily_counts['date'] = pd.to_datetime(daily_counts['date'])
 
-                    st.download_button(
-                        label="ðŸ“Š Preuzmi Excel datoteku",
-                        data=excel_data,
-                        file_name=f"eventi_{start_date}_{end_date}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
+        fig = px.line(daily_counts, x='date', y='count', 
+                     title='Daily Event Count',
+                     labels={'date': 'Date', 'count': 'Number of Events'})
+        fig.update_traces(mode='lines+markers')
+        st.plotly_chart(fig, use_container_width=True)
 
-        with col3:
-            if export_format == "JSON":
-                if st.button("ðŸ“¥ Preuzmi JSON"):
-                    json_data = json.dumps(export_data, indent=2, ensure_ascii=False)
-                    st.download_button(
-                        label="ðŸ”— Preuzmi JSON datoteku",
-                        data=json_data,
-                        file_name=f"eventi_{start_date}_{end_date}.json",
-                        mime="application/json"
-                    )
+        # Weekly pattern
+        df['weekday'] = df['datetime'].dt.day_name()
+        weekday_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+        weekday_counts = df.groupby('weekday').size().reindex(weekday_order).fillna(0)
 
-    else:
-        st.info("Nema podataka za export u odabranom rasponu.")
+        fig2 = px.bar(x=weekday_counts.index, y=weekday_counts.values,
+                     title='Events by Day of Week',
+                     labels={'x': 'Day', 'y': 'Count'})
+        st.plotly_chart(fig2, use_container_width=True)
+
+    with tab2:
+        st.subheader("Distribution by Area")
+
+        area_counts = df.groupby('area').size().reset_index(name='count')
+
+        fig = px.pie(area_counts, names='area', values='count',
+                    title='Events by Area')
+        st.plotly_chart(fig, use_container_width=True)
+
+        # Table view
+        st.write("**Breakdown:**")
+        st.dataframe(area_counts.sort_values('count', ascending=False))
+
+    with tab3:
+        st.subheader("Distribution by Category")
+
+        cat_counts = df.groupby(['area', 'category']).size().reset_index(name='count')
+
+        fig = px.bar(cat_counts, x='category', y='count', color='area',
+                    title='Events by Category',
+                    labels={'category': 'Category', 'count': 'Count'})
+        st.plotly_chart(fig, use_container_width=True)
+
+        # Table view
+        st.write("**Breakdown:**")
+        st.dataframe(cat_counts.sort_values('count', ascending=False))
+
+# ============================================
+# EXPORT PAGE
+# ============================================
+
+def export_page(data_manager: DataManager):
+    """Page for exporting data"""
+
+    st.title("💾 Export Data")
+
+    user_id = st.session_state.user_id
+
+    st.write("Export your events data to CSV or Excel format.")
+
+    # Date range
+    col1, col2 = st.columns(2)
+    with col1:
+        start_date = st.date_input("From:", value=date.today() - timedelta(days=30))
+    with col2:
+        end_date = st.date_input("To:", value=date.today())
+
+    # Export format
+    export_format = st.radio("Export Format:", ["CSV", "Excel"])
+
+    if st.button("🔄 Load Preview", use_container_width=True):
+        filters = {
+            'date_from': start_date,
+            'date_to': end_date
+        }
+
+        events = data_manager.get_events(user_id, filters)
+
+        if not events:
+            st.info("📭 No events found in selected date range.")
+        else:
+            # Convert to DataFrame
+            export_data = []
+            for e in events:
+                occurred_dt = datetime.fromisoformat(e['occurred_at'].replace('Z', '+00:00'))
+                export_data.append({
+                    'Date': occurred_dt.strftime('%Y-%m-%d'),
+                    'Time': occurred_dt.strftime('%H:%M:%S'),
+                    'Area': e.get('mu_category', {}).get('mu_area', {}).get('name', ''),
+                    'Category': e.get('mu_category', {}).get('name', ''),
+                    'Comment': e.get('comment', ''),
+                    'Duration (min)': e.get('data', {}).get('duration_minutes', 0) if e.get('data') else 0
+                })
+
+            df = pd.DataFrame(export_data)
+
+            st.write(f"**Preview (Total: {len(df)} events):**")
+            st.dataframe(df.head(20))
+
+            # Download button
+            if export_format == "CSV":
+                csv = df.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="📥 Download CSV",
+                    data=csv,
+                    file_name=f"events_{start_date}_{end_date}.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+            else:  # Excel
+                output = io.BytesIO()
+                with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                    df.to_excel(writer, index=False, sheet_name='Events')
+                excel_data = output.getvalue()
+
+                st.download_button(
+                    label="📥 Download Excel",
+                    data=excel_data,
+                    file_name=f"events_{start_date}_{end_date}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
+
+# ============================================
+# MAIN APPLICATION ENTRY POINT
+# ============================================
 
 def main():
-    st.set_page_config(
-        page_title="Event Diary Pro", 
-        page_icon="ðŸ“…", 
-        layout="wide",
-        initial_sidebar_state="expanded"
-    )
+    """Main application entry point"""
 
-    # Initialize authentication state
-    init_auth_state()
+    # Initialize session state
+    init_session_state()
 
-    # Navigation
+    # Check if Supabase is connected
+    if not supabase:
+        st.error("❌ Cannot connect to database. Please check your configuration.")
+        st.stop()
+
+    # Initialize managers
+    auth_manager = AuthManager(supabase)
+    data_manager = DataManager(supabase)
+
+    # Check authentication
     if not st.session_state.authenticated:
-        login_page()
+        login_page(auth_manager)
     else:
-        navigation_sidebar()
+        # Show navigation sidebar
+        navigation_sidebar(auth_manager)
 
         # Route to appropriate page
-        if st.session_state.current_page == 'dashboard':
-            main_dashboard()
-        elif st.session_state.current_page == 'add_event':
-            add_event_page()
-        elif st.session_state.current_page == 'bulk_add':
-            bulk_add_page()
-        elif st.session_state.current_page == 'analytics':
-            analytics_page()
-        elif st.session_state.current_page == 'calendar':
-            calendar_view_page()
-        elif st.session_state.current_page == 'export':
-            export_page()
-        elif st.session_state.current_page == 'edit_event':
-            edit_event_page()
+        current_page = st.session_state.current_page
+
+        if current_page == 'dashboard':
+            dashboard_page(data_manager)
+        elif current_page == 'add_event':
+            add_event_page(data_manager)
+        elif current_page == 'edit_event':
+            edit_event_page(data_manager)
+        elif current_page == 'manage_data':
+            manage_data_page(data_manager)
+        elif current_page == 'bulk_import':
+            bulk_import_page(data_manager)
+        elif current_page == 'analytics':
+            analytics_page(data_manager)
+        elif current_page == 'export':
+            export_page(data_manager)
+        else:
+            st.error(f"❌ Unknown page: {current_page}")
+
+# ============================================
+# RUN APPLICATION
+# ============================================
 
 if __name__ == "__main__":
-    main() # Run the main function
+    main()
