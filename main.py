@@ -271,32 +271,52 @@ class DataManager:
             st.error(f"❌ Error counting events: {str(e)}")
             return 0
 
-    def add_event(self, user_id: str, category_id: int, occurred_at: datetime, comment: str = "", data: dict = None):
+    def add_event(self, user_id: str, category_id: int, occurred_at: datetime, comment: str = "", duration_minutes: int = None, data: dict = None):
         """Add a new event"""
         try:
-            response = self.supabase.table("mu_event").insert({
+            event_data = {
                 "category_id": category_id,
                 "occurred_at": occurred_at.isoformat(),
                 "comment": comment,
-                "data": data,
                 "user_id": user_id,
                 "created_at": datetime.now().isoformat()
-            }).execute()
+            }
+
+            # Add duration_minutes as separate field (not in data JSON)
+            if duration_minutes is not None and duration_minutes > 0:
+                event_data["duration_minutes"] = duration_minutes
+
+            # Add additional data if provided
+            if data:
+                event_data["data"] = data
+
+            response = self.supabase.table("mu_event").insert(event_data).execute()
             return response.data[0] if response.data else None
         except Exception as e:
             st.error(f"❌ Error adding event: {str(e)}")
             return None
 
-    def update_event(self, event_id: int, user_id: str, category_id: int, occurred_at: datetime, comment: str = "", data: dict = None):
+    def update_event(self, event_id: int, user_id: str, category_id: int, occurred_at: datetime, comment: str = "", duration_minutes: int = None, data: dict = None):
         """Update an existing event"""
         try:
-            response = self.supabase.table("mu_event").update({
+            event_data = {
                 "category_id": category_id,
                 "occurred_at": occurred_at.isoformat(),
                 "comment": comment,
-                "data": data,
                 "updated_at": datetime.now().isoformat()
-            }).eq("id", event_id).eq("user_id", user_id).execute()
+            }
+
+            # Add duration_minutes as separate field (not in data JSON)
+            if duration_minutes is not None and duration_minutes > 0:
+                event_data["duration_minutes"] = duration_minutes
+            else:
+                event_data["duration_minutes"] = None
+
+            # Add additional data if provided
+            if data:
+                event_data["data"] = data
+
+            response = self.supabase.table("mu_event").update(event_data).eq("id", event_id).eq("user_id", user_id).execute()
             return response.data[0] if response.data else None
         except Exception as e:
             st.error(f"❌ Error updating event: {str(e)}")
@@ -662,6 +682,9 @@ def dashboard_page(data_manager: DataManager):
                     st.write(f"**{occurred_dt.strftime('%Y-%m-%d %H:%M')}**")
                     if event.get('comment'):
                         st.write(event['comment'])
+                    # Show duration if available
+                    if event.get('duration_minutes') and event['duration_minutes'] > 0:
+                        st.write(f"⏱️ Duration: {event['duration_minutes']} min")
 
                 with col2:
                     if event.get('mu_category'):
@@ -763,8 +786,7 @@ def add_event_page(data_manager: DataManager):
             with col2:
                 st.write("")  # Spacing
                 st.write("")  # Spacing
-                if st.form_submit_button("+ New Category"):
-                    st.info("💡 Use 'Manage Areas & Categories' page to add new categories")
+                st.write("💡 Use 'Manage Areas & Categories' to add new categories")
 
         st.divider()
 
@@ -819,18 +841,13 @@ def add_event_page(data_manager: DataManager):
             if not selected_category_id:
                 st.error("❌ Please select a category or create one first")
             else:
-                # Prepare data
-                event_data = {
-                    "duration_minutes": duration if duration > 0 else None
-                }
-
-                # Add event
+                # Add event with duration as separate field
                 result = data_manager.add_event(
                     user_id=user_id,
                     category_id=selected_category_id,
                     occurred_at=occurred_at,
                     comment=comment,
-                    data=event_data if event_data["duration_minutes"] else None
+                    duration_minutes=duration if duration > 0 else None
                 )
 
                 if result:
@@ -839,10 +856,14 @@ def add_event_page(data_manager: DataManager):
                     st.session_state.last_area_id = selected_area_id
                     st.session_state.last_category_id = selected_category_id
                     st.info("💡 Your last selections are remembered for the next event!")
-                    # Redirect to dashboard
-                    if st.button("Go to Dashboard"):
-                        st.session_state.current_page = 'dashboard'
-                        st.rerun()
+                    st.session_state.show_redirect = True
+
+    # Show redirect button outside of form
+    if st.session_state.get('show_redirect', False):
+        if st.button("Go to Dashboard"):
+            st.session_state.current_page = 'dashboard'
+            st.session_state.show_redirect = False
+            st.rerun()
 
 # ============================================
 # EDIT EVENT PAGE
@@ -936,12 +957,12 @@ def edit_event_page(data_manager: DataManager):
             height=100
         )
 
-        # Duration
-        current_duration = event.get('data', {}).get('duration_minutes', 0) if event.get('data') else 0
+        # Duration - get from duration_minutes field
+        current_duration = event.get('duration_minutes', 0) or 0
         duration = st.number_input(
             "Duration (minutes, optional)",
             min_value=0,
-            value=current_duration or 0
+            value=current_duration
         )
 
         # Submit buttons
@@ -1230,12 +1251,15 @@ category_id,occurred_at,comment,duration_minutes
 
                 occurred_at = datetime.combine(evt_date, evt_time)
 
-                events_to_add.append({
+                event_data = {
                     "category_id": cat_id,
                     "occurred_at": occurred_at,
                     "comment": comment,
-                    "data": {"duration_minutes": duration} if duration > 0 else None
-                })
+                }
+                # Add duration_minutes as separate field
+                if duration > 0:
+                    event_data["duration_minutes"] = duration
+                events_to_add.append(event_data)
 
                 st.divider()
 
@@ -1292,7 +1316,7 @@ def analytics_page(data_manager: DataManager):
             'area': e.get('mu_category', {}).get('mu_area', {}).get('name', 'Unknown'),
             'category': e.get('mu_category', {}).get('name', 'Unknown'),
             'comment': e.get('comment', ''),
-            'duration': e.get('data', {}).get('duration_minutes', 0) if e.get('data') else 0
+            'duration': e.get('duration_minutes', 0) or 0
         })
 
     df = pd.DataFrame(df_events)
