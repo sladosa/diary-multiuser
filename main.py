@@ -134,6 +134,15 @@ class DataManager:
 
     # ===== AREA OPERATIONS =====
 
+    def get_predefined_area_names(self):
+        """Get all predefined area names from public.area table"""
+        try:
+            response = self.supabase.table("area").select("name").order("name").execute()
+            return [area['name'] for area in response.data] if response.data else []
+        except Exception as e:
+            st.error(f"❌ Error loading predefined areas: {str(e)}")
+            return []
+
     def get_user_areas(self, user_id: str):
         """Get all areas for a user"""
         try:
@@ -146,10 +155,12 @@ class DataManager:
     def add_area(self, user_id: str, area_name: str):
         """Add a new area for user"""
         try:
+            now_local = datetime.now()
             response = self.supabase.table("mu_area").insert({
                 "name": area_name,
                 "user_id": user_id,
-                "created_at": datetime.now().isoformat()
+                "created_at": now_local.isoformat(),
+                "updated_at": now_local.isoformat()
             }).execute()
             return response.data[0] if response.data else None
         except Exception as e:
@@ -167,6 +178,23 @@ class DataManager:
 
     # ===== CATEGORY OPERATIONS =====
 
+    def get_predefined_categories_for_area(self, area_name: str):
+        """Get predefined categories from public.category for a given area name"""
+        try:
+            # First, get the area_id from public.area
+            area_response = self.supabase.table("area").select("id").eq("name", area_name).execute()
+            if not area_response.data:
+                return []
+
+            area_id = area_response.data[0]['id']
+
+            # Now get categories for this area
+            cat_response = self.supabase.table("category").select("name").eq("area_id", area_id).order("name").execute()
+            return [cat['name'] for cat in cat_response.data] if cat_response.data else []
+        except Exception as e:
+            st.error(f"❌ Error loading predefined categories: {str(e)}")
+            return []
+
     def get_user_categories(self, user_id: str, area_id: int = None):
         """Get categories for a user, optionally filtered by area"""
         try:
@@ -182,11 +210,13 @@ class DataManager:
     def add_category(self, user_id: str, category_name: str, area_id: int):
         """Add a new category for user"""
         try:
+            now_local = datetime.now()
             response = self.supabase.table("mu_category").insert({
                 "name": category_name,
                 "area_id": area_id,
                 "user_id": user_id,
-                "created_at": datetime.now().isoformat()
+                "created_at": now_local.isoformat(),
+                "updated_at": now_local.isoformat()
             }).execute()
             return response.data[0] if response.data else None
         except Exception as e:
@@ -229,8 +259,8 @@ class DataManager:
                     end_date = filters['date_to'] + timedelta(days=1)
                     query = query.lt("occurred_at", end_date.isoformat())
 
-            # Order by date descending
-            query = query.order("occurred_at", desc=True)
+            # Order by last updated/created descending (newest edits first)
+            query = query.order("updated_at", desc=True, nullsfirst=False).order("created_at", desc=True)
 
             # Apply pagination
             if limit:
@@ -274,12 +304,14 @@ class DataManager:
     def add_event(self, user_id: str, category_id: int, occurred_at: datetime, comment: str = "", duration_minutes: int = None, data: dict = None):
         """Add a new event"""
         try:
+            now_local = datetime.now()
             event_data = {
                 "category_id": category_id,
                 "occurred_at": occurred_at.isoformat(),
                 "comment": comment,
                 "user_id": user_id,
-                "created_at": datetime.now().isoformat()
+                "created_at": now_local.isoformat(),
+                "updated_at": now_local.isoformat()
             }
 
             # Add duration_minutes as separate field (not in data JSON)
@@ -343,9 +375,11 @@ class DataManager:
     def bulk_add_events(self, events_data: list, user_id: str):
         """Bulk add multiple events"""
         try:
+            now_local = datetime.now()
             for event in events_data:
                 event['user_id'] = user_id
-                event['created_at'] = datetime.now().isoformat()
+                event['created_at'] = now_local.isoformat()
+                event['updated_at'] = now_local.isoformat()
                 if isinstance(event.get('occurred_at'), datetime):
                     event['occurred_at'] = event['occurred_at'].isoformat()
 
@@ -402,6 +436,14 @@ def init_session_state():
     # Delete confirmation
     if 'delete_confirm_id' not in st.session_state:
         st.session_state.delete_confirm_id = None
+
+    # Manage data page - tab and area selection
+    if 'manage_data_active_tab' not in st.session_state:
+        st.session_state.manage_data_active_tab = 0  # 0 for Areas, 1 for Categories
+    if 'newly_added_area_id' not in st.session_state:
+        st.session_state.newly_added_area_id = None
+    if 'newly_added_area_name' not in st.session_state:
+        st.session_state.newly_added_area_name = None
 
     # Check for existing session
     if supabase and not st.session_state.authenticated:
@@ -503,17 +545,44 @@ def navigation_sidebar(auth_manager: AuthManager):
         "export": "💾 Export Data"
     }
 
-    # Radio button for page selection
+    # Determine the radio button index
+    if st.session_state.current_page in pages:
+        radio_index = list(pages.keys()).index(st.session_state.current_page)
+        # Remember this as the last main page
+        st.session_state.last_main_page = st.session_state.current_page
+    else:
+        # We're on a hidden page (e.g., edit_event)
+        # Show the last main page in radio selection
+        if 'last_main_page' in st.session_state and st.session_state.last_main_page in pages:
+            radio_index = list(pages.keys()).index(st.session_state.last_main_page)
+        else:
+            radio_index = 0
+
+    # Show breadcrumb if on hidden page
+    if st.session_state.current_page not in pages:
+        if st.session_state.current_page == 'edit_event':
+            st.sidebar.info("✏️ **Editing Event**")
+
     selected_page = st.sidebar.radio(
         "Select Page:",
         options=list(pages.keys()),
         format_func=lambda x: pages[x],
-        index=list(pages.keys()).index(st.session_state.current_page) if st.session_state.current_page in pages else 0
+        index=radio_index
     )
 
-    if selected_page != st.session_state.current_page:
-        st.session_state.current_page = selected_page
-        st.rerun()
+    # Handle page navigation
+    if st.session_state.current_page in pages:
+        # We're on a main page - normal behavior
+        if selected_page != st.session_state.current_page:
+            st.session_state.current_page = selected_page
+            st.rerun()
+    else:
+        # We're on a hidden page - only navigate if user clicked a different option
+        last_main = st.session_state.get('last_main_page', 'dashboard')
+        if selected_page != last_main:
+            st.session_state.current_page = selected_page
+            st.session_state.last_main_page = selected_page
+            st.rerun()
 
     st.sidebar.divider()
 
@@ -679,7 +748,13 @@ def dashboard_page(data_manager: DataManager):
 
                 with col1:
                     occurred_dt = datetime.fromisoformat(event['occurred_at'].replace('Z', '+00:00'))
-                    st.write(f"**{occurred_dt.strftime('%Y-%m-%d %H:%M')}**")
+                    st.write(f"**📅 {occurred_dt.strftime('%Y-%m-%d %H:%M')}**")
+
+                    # Show when it was last modified
+                    if event.get('updated_at'):
+                        updated_dt = datetime.fromisoformat(event['updated_at'].replace('Z', '+00:00'))
+                        st.caption(f"✏️ Edited: {updated_dt.strftime('%Y-%m-%d %H:%M')}")
+
                     if event.get('comment'):
                         st.write(event['comment'])
                     # Show duration if available
@@ -1043,9 +1118,8 @@ def edit_event_page(data_manager: DataManager):
             if result:
                 st.success("✅ Event updated successfully!")
                 st.session_state.editing_event_id = None
-                if st.button("Back to Dashboard"):
-                    st.session_state.current_page = 'dashboard'
-                    st.rerun()
+                st.session_state.current_page = 'dashboard'
+                st.rerun()
 
 # ============================================
 # MANAGE AREAS & CATEGORIES PAGE
@@ -1058,30 +1132,90 @@ def manage_data_page(data_manager: DataManager):
 
     user_id = st.session_state.user_id
 
-    tab1, tab2 = st.tabs(["📁 Areas", "🏷️ Categories"])
+    # Check if we should switch to Categories tab after adding area
+    if st.session_state.newly_added_area_id:
+        st.session_state.manage_data_active_tab = 1
+
+    # Use session state to control active tab
+    tab_names = ["📁 Areas", "🏷️ Categories"]
+    selected_tab = st.radio(
+        "Select Tab:",
+        options=[0, 1],
+        format_func=lambda x: tab_names[x],
+        index=st.session_state.manage_data_active_tab,
+        horizontal=True,
+        key="manage_data_tab_selector"
+    )
+
+    # Update session state if user manually changed tab
+    if selected_tab != st.session_state.manage_data_active_tab:
+        st.session_state.manage_data_active_tab = selected_tab
+        # Clear newly added area when switching tabs manually
+        st.session_state.newly_added_area_id = None
+        st.session_state.newly_added_area_name = None
+        st.rerun()
+
+    st.divider()
 
     # === AREAS TAB ===
-    with tab1:
+    if st.session_state.manage_data_active_tab == 0:
         st.subheader("Your Areas")
+
+        # Get predefined area names
+        predefined_names = data_manager.get_predefined_area_names()
+
+        # Add "Add Area new" option at the end
+        area_options = predefined_names + ["➕ Add Area new"]
+
+        # Area selection outside form to update dynamically
+        st.write("**Select from predefined areas or add a new one:**")
+        selected_area_option = st.selectbox(
+            "Choose Area:",
+            options=area_options,
+            key="area_selection_dropdown"
+        )
 
         # Add new area form
         with st.form("add_area_form"):
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                new_area_name = st.text_input("New Area Name", placeholder="e.g., Work, Health, Personal")
-            with col2:
-                st.write("")
-                st.write("")
-                add_area_btn = st.form_submit_button("➕ Add Area", use_container_width=True)
+            # If user selected "Add Area new", show text input
+            if selected_area_option == "➕ Add Area new":
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    new_area_name = st.text_input("New Area Name", placeholder="e.g., Work, Health, Personal")
+                with col2:
+                    st.write("")
+                    st.write("")
+                    add_area_btn = st.form_submit_button("➕ Add Custom Area", use_container_width=True)
 
-            if add_area_btn:
-                if not new_area_name or not new_area_name.strip():
-                    st.error("❌ Area name cannot be empty")
-                else:
-                    result = data_manager.add_area(user_id, new_area_name.strip())
-                    if result:
-                        st.success(f"✅ Area '{new_area_name}' added successfully!")
-                        st.rerun()
+                if add_area_btn:
+                    if not new_area_name or not new_area_name.strip():
+                        st.error("❌ Area name cannot be empty")
+                    else:
+                        result = data_manager.add_area(user_id, new_area_name.strip())
+                        if result:
+                            st.success(f"✅ Area '{new_area_name}' added successfully! Now add categories.")
+                            # Set session state to switch to Categories tab
+                            st.session_state.newly_added_area_id = result['id']
+                            st.session_state.newly_added_area_name = new_area_name.strip()
+                            st.rerun()
+            else:
+                # User selected a predefined area
+                st.info(f"Selected: **{selected_area_option}**")
+                add_area_btn = st.form_submit_button("➕ Add This Area", use_container_width=True)
+
+                if add_area_btn:
+                    # Check if user already has this area
+                    existing_areas = data_manager.get_user_areas(user_id)
+                    if any(area['name'] == selected_area_option for area in existing_areas):
+                        st.warning(f"⚠️ You already have an area named '{selected_area_option}'")
+                    else:
+                        result = data_manager.add_area(user_id, selected_area_option)
+                        if result:
+                            st.success(f"✅ Area '{selected_area_option}' added successfully! Now add categories.")
+                            # Set session state to switch to Categories tab
+                            st.session_state.newly_added_area_id = result['id']
+                            st.session_state.newly_added_area_name = selected_area_option
+                            st.rerun()
 
         st.divider()
 
@@ -1110,7 +1244,7 @@ def manage_data_page(data_manager: DataManager):
                 st.divider()
 
     # === CATEGORIES TAB ===
-    with tab2:
+    elif st.session_state.manage_data_active_tab == 1:
         st.subheader("Your Categories")
 
         areas = data_manager.get_user_areas(user_id)
@@ -1118,34 +1252,84 @@ def manage_data_page(data_manager: DataManager):
         if not areas:
             st.warning("⚠️ Please create an area first before adding categories.")
         else:
+            # Show info if coming from adding area
+            if st.session_state.newly_added_area_id:
+                st.info(f"✅ Area '{st.session_state.newly_added_area_name}' added! Now add categories to this area.")
+
+            # Area selection OUTSIDE form to update predefined categories dynamically
+            st.write("**Select Area for Category:**")
+            area_options = {a['id']: a['name'] for a in areas}
+
+            # If newly added area exists, set it as default
+            default_area_idx = 0
+            if st.session_state.newly_added_area_id and st.session_state.newly_added_area_id in area_options:
+                default_area_idx = list(area_options.keys()).index(st.session_state.newly_added_area_id)
+
+            selected_area_id = st.selectbox(
+                "Area",
+                options=list(area_options.keys()),
+                format_func=lambda x: area_options[x],
+                index=default_area_idx,
+                key="category_area_selector"
+            )
+
+            # Get the selected area name
+            selected_area_name = area_options[selected_area_id]
+
+            # Get predefined categories for this area
+            predefined_categories = data_manager.get_predefined_categories_for_area(selected_area_name)
+
+            # Check if area is predefined (has predefined categories)
+            has_predefined = len(predefined_categories) > 0
+
+            if has_predefined:
+                category_options = predefined_categories + ["➕ Add new category"]
+                st.write("**Select from predefined categories or add a new one:**")
+                selected_category_option = st.selectbox(
+                    "Choose Category:",
+                    options=category_options,
+                    key="category_selection_dropdown"
+                )
+            else:
+                st.info(f"ℹ️ Area '{selected_area_name}' is custom. You can add custom categories.")
+                selected_category_option = "➕ Add new category"
+
             # Add new category form
             with st.form("add_category_form"):
-                col1, col2, col3 = st.columns([2, 2, 1])
-
-                with col1:
-                    area_options = {a['id']: a['name'] for a in areas}
-                    selected_area_id = st.selectbox(
-                        "Area",
-                        options=list(area_options.keys()),
-                        format_func=lambda x: area_options[x]
-                    )
-
-                with col2:
+                # If user selected "Add new category" or area has no predefined categories, show text input
+                if selected_category_option == "➕ Add new category":
                     new_category_name = st.text_input("Category Name", placeholder="e.g., Meeting, Exercise")
+                    add_cat_btn = st.form_submit_button("➕ Add Custom Category", use_container_width=True)
 
-                with col3:
-                    st.write("")
-                    st.write("")
-                    add_cat_btn = st.form_submit_button("➕ Add", use_container_width=True)
+                    if add_cat_btn:
+                        if not new_category_name or not new_category_name.strip():
+                            st.error("❌ Category name cannot be empty")
+                        else:
+                            result = data_manager.add_category(user_id, new_category_name.strip(), selected_area_id)
+                            if result:
+                                st.success(f"✅ Category '{new_category_name}' added to area!")
+                                # Clear newly added area state after first category is added
+                                st.session_state.newly_added_area_id = None
+                                st.session_state.newly_added_area_name = None
+                                st.rerun()
+                else:
+                    # User selected a predefined category
+                    st.info(f"Selected: **{selected_category_option}**")
+                    add_cat_btn = st.form_submit_button("➕ Add This Category", use_container_width=True)
 
-                if add_cat_btn:
-                    if not new_category_name or not new_category_name.strip():
-                        st.error("❌ Category name cannot be empty")
-                    else:
-                        result = data_manager.add_category(user_id, new_category_name.strip(), selected_area_id)
-                        if result:
-                            st.success(f"✅ Category '{new_category_name}' added to area!")
-                            st.rerun()
+                    if add_cat_btn:
+                        # Check if user already has this category in this area
+                        existing_cats = data_manager.get_user_categories(user_id, selected_area_id)
+                        if any(cat['name'] == selected_category_option for cat in existing_cats):
+                            st.warning(f"⚠️ You already have a category named '{selected_category_option}' in this area")
+                        else:
+                            result = data_manager.add_category(user_id, selected_category_option, selected_area_id)
+                            if result:
+                                st.success(f"✅ Category '{selected_category_option}' added to area!")
+                                # Clear newly added area state after first category is added
+                                st.session_state.newly_added_area_id = None
+                                st.session_state.newly_added_area_name = None
+                                st.rerun()
 
             st.divider()
 
