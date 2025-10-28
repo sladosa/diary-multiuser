@@ -736,34 +736,42 @@ def add_event_page(data_manager: DataManager):
             st.rerun()
         return
 
+    # === AREA SELECTION (OUTSIDE FORM) ===
+    st.subheader("Event Details")
+
+    # Area selection with "Add New" option
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        area_options = {a['id']: a['name'] for a in areas}
+        default_area_idx = 0
+        if st.session_state.last_area_id and st.session_state.last_area_id in area_options:
+            default_area_idx = list(area_options.keys()).index(st.session_state.last_area_id)
+
+        # Area selectbox OUTSIDE form - will update immediately
+        selected_area_id = st.selectbox(
+            "Area *",
+            options=list(area_options.keys()),
+            format_func=lambda x: area_options[x],
+            index=default_area_idx,
+            help="Select the area for this event",
+            key="add_event_area_select"
+        )
+
+    with col2:
+        st.write("")  # Spacing
+        st.write("")  # Spacing
+        if st.button("+ New Area", key="add_area_btn"):
+            st.info("💡 Use 'Manage Areas & Categories' page to add new areas")
+
+    # Get categories for selected area (updates dynamically)
+    categories = data_manager.get_user_categories(user_id, selected_area_id)
+
+    st.divider()
+
+    # === REST OF FORM ===
     with st.form("add_event_form"):
-        st.subheader("Event Details")
 
-        # Area selection with "Add New" option
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            area_options = {a['id']: a['name'] for a in areas}
-            default_area_idx = 0
-            if st.session_state.last_area_id and st.session_state.last_area_id in area_options:
-                default_area_idx = list(area_options.keys()).index(st.session_state.last_area_id)
-
-            selected_area_id = st.selectbox(
-                "Area *",
-                options=list(area_options.keys()),
-                format_func=lambda x: area_options[x],
-                index=default_area_idx,
-                help="Select the area for this event"
-            )
-
-        with col2:
-            st.write("")  # Spacing
-            st.write("")  # Spacing
-            if st.form_submit_button("+ New Area"):
-                st.info("💡 Use 'Manage Areas & Categories' page to add new areas")
-
-        # Category selection based on area
-        categories = data_manager.get_user_categories(user_id, selected_area_id)
-
+        # Category selection based on area (now inside form)
         if not categories:
             st.warning(f"⚠️ No categories found for this area. Please create a category first.")
             selected_category_id = None
@@ -897,23 +905,32 @@ def edit_event_page(data_manager: DataManager):
     # Get areas and categories
     areas = data_manager.get_user_areas(user_id)
 
+    # === AREA SELECTION (OUTSIDE FORM) ===
+    st.subheader("Edit Event Details")
+
+    # Area selection
+    area_options = {a['id']: a['name'] for a in areas}
+    current_area_id = event['mu_category']['area_id']
+    current_area_idx = list(area_options.keys()).index(current_area_id) if current_area_id in area_options else 0
+
+    # Area selectbox OUTSIDE form - will update immediately
+    selected_area_id = st.selectbox(
+        "Area *",
+        options=list(area_options.keys()),
+        format_func=lambda x: area_options[x],
+        index=current_area_idx,
+        key="edit_event_area_select"
+    )
+
+    # Get categories for selected area (updates dynamically)
+    categories = data_manager.get_user_categories(user_id, selected_area_id)
+
+    st.divider()
+
+    # === REST OF FORM ===
     with st.form("edit_event_form"):
-        st.subheader("Edit Event Details")
 
-        # Area selection
-        area_options = {a['id']: a['name'] for a in areas}
-        current_area_id = event['mu_category']['area_id']
-        current_area_idx = list(area_options.keys()).index(current_area_id) if current_area_id in area_options else 0
-
-        selected_area_id = st.selectbox(
-            "Area *",
-            options=list(area_options.keys()),
-            format_func=lambda x: area_options[x],
-            index=current_area_idx
-        )
-
-        # Category selection
-        categories = data_manager.get_user_categories(user_id, selected_area_id)
+        # Category selection (now inside form)
         cat_options = {c['id']: c['name'] for c in categories}
         current_cat_idx = list(cat_options.keys()).index(event['category_id']) if event['category_id'] in cat_options else 0
 
