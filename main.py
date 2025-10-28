@@ -1030,11 +1030,6 @@ def edit_event_page(data_manager: DataManager):
                 st.rerun()
 
         if submitted:
-            # Prepare data
-            event_data = {
-                "duration_minutes": duration if duration > 0 else None
-            }
-
             # Update event
             result = data_manager.update_event(
                 event_id=event_id,
@@ -1042,7 +1037,7 @@ def edit_event_page(data_manager: DataManager):
                 category_id=selected_category_id,
                 occurred_at=occurred_at,
                 comment=comment,
-                data=event_data if event_data["duration_minutes"] else None
+                duration_minutes=duration if duration > 0 else None
             )
 
             if result:
