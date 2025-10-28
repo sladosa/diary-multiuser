@@ -22,7 +22,7 @@ from dotenv import load_dotenv
 # ============================================
 
 st.set_page_config(
-    page_title="Event Diary",
+    page_title="Event Diary 1",
     page_icon="📅",
     layout="wide",
     initial_sidebar_state="expanded"
