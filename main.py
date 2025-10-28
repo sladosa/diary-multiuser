@@ -22,7 +22,7 @@ from dotenv import load_dotenv
 # ============================================
 
 st.set_page_config(
-    page_title="Event Diary 1",
+    page_title="Event Diary",
     page_icon="📅",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -536,7 +536,7 @@ def navigation_sidebar(auth_manager: AuthManager):
 def dashboard_page(data_manager: DataManager):
     """Main dashboard with event list, filters, and pagination"""
 
-    st.title("📅 Event Dashboard")
+    st.title("📅 Event Dashboard 1")
 
     user_id = st.session_state.user_id
 
