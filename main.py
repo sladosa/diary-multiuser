@@ -768,8 +768,28 @@ def add_event_page(data_manager: DataManager):
 
     st.divider()
 
+    # Initialize form counter to force widget reset after successful submission
+    if 'add_event_form_counter' not in st.session_state:
+        st.session_state.add_event_form_counter = 0
+
+    # Info message about Enter key behavior
+    st.info("ℹ️ **Tip:** Use TAB key to navigate between fields. Only click 'Add Event' button to save the event.")
+
     # === REST OF FORM ===
-    with st.form("add_event_form"):
+    # Use form counter in form key to reset form after submission
+    with st.form(f"add_event_form_{st.session_state.add_event_form_counter}"):
+
+        # Hidden dummy submit button to catch Enter key presses
+        # This prevents Enter from triggering the actual submit buttons
+        dummy_submit = st.form_submit_button("dummy", disabled=True, type="secondary")
+        # Hide the dummy button with CSS
+        st.markdown("""
+        <style>
+        button[kind="secondary"][disabled] {
+            display: none;
+        }
+        </style>
+        """, unsafe_allow_html=True)
 
         # Category selection based on area (now inside form)
         if not categories:
@@ -821,33 +841,46 @@ def add_event_page(data_manager: DataManager):
 
         st.divider()
 
-        # Comment
+        # Comment - no value parameter, will be empty by default
         comment = st.text_area(
-            "Comment (optional)",
+            "Comment (optional) - Press TAB to move to next field",
             placeholder="Add any notes or details about this event...",
             height=100
         )
 
-        # Duration (optional)
+        # Duration (optional) - no value parameter, will be 0 by default
         duration = st.number_input(
-            "Duration (minutes, optional)",
+            "Duration (minutes, optional) - Press TAB to move to buttons",
             min_value=0,
             value=0,
             help="How long did this event last?"
         )
 
-        # Submit button
+        st.divider()
+
+        # Submit buttons - now with clear separation
         col1, col2, col3 = st.columns([1, 1, 2])
         with col1:
-            submitted = st.form_submit_button("✅ Add Event", use_container_width=True)
+            submitted = st.form_submit_button("✅ Add Event", use_container_width=True, type="primary")
         with col2:
-            if st.form_submit_button("❌ Cancel", use_container_width=True):
-                st.session_state.current_page = 'dashboard'
-                st.rerun()
+            cancelled = st.form_submit_button("❌ Cancel", use_container_width=True, type="secondary")
 
-        if submitted:
+        # Handle dummy submit (Enter key pressed) - do nothing
+        if dummy_submit:
+            st.info("ℹ️ Please use the 'Add Event' button to submit the form.")
+
+        # Handle Cancel button - go to dashboard
+        if cancelled:
+            st.session_state.current_page = 'dashboard'
+            st.rerun()
+
+        # Handle submit - only process if explicitly submitted via Add Event button
+        if submitted and not dummy_submit:
             if not selected_category_id:
                 st.error("❌ Please select a category or create one first")
+            # Prevent empty event submission (both comment and duration are empty/zero)
+            elif not comment.strip() and duration == 0:
+                st.warning("⚠️ Please add a comment or duration. Empty events are not allowed.")
             else:
                 # Add event with duration as separate field
                 result = data_manager.add_event(
@@ -863,8 +896,12 @@ def add_event_page(data_manager: DataManager):
                     # Remember last used area and category
                     st.session_state.last_area_id = selected_area_id
                     st.session_state.last_category_id = selected_category_id
+                    # Increment form counter to reset form with empty fields
+                    st.session_state.add_event_form_counter += 1
                     st.info("💡 Your last selections are remembered for the next event!")
                     st.session_state.show_redirect = True
+                    # Force rerun to reset the form immediately
+                    st.rerun()
 
     # Show redirect button outside of form
     if st.session_state.get('show_redirect', False):
